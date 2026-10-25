@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#20262d">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Viewer">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Model Viewer</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/build/three.module.min.js", "three/addons/": "./vendor/three/examples/jsm/" } }
+</script>
+<script type="module" src="js/main.js"></script>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="labels"></div>
+
+<header id="top" class="glass">
+  <button id="btnOpen" class="ib" title="Open a model" data-icon="open"></button>
+  <div id="title">Model Viewer</div>
+  <button id="btnHome" class="ib" title="Fit the whole model" data-icon="home"></button>
+</header>
+
+<nav id="scenes"></nav>
+
+<nav id="tools" class="glass">
+  <button data-tool="layers" data-icon="layers"><span>Layers</span></button>
+  <button data-tool="tree" data-icon="tree"><span>Tree</span></button>
+  <button data-tool="section" data-icon="section"><span>Section</span></button>
+  <button data-tool="measure" data-icon="measure"><span>Measure</span></button>
+  <button data-tool="walk" data-icon="walk"><span>Walk</span></button>
+  <button data-tool="build" data-icon="build"><span>Build</span></button>
+  <button data-tool="xray" data-icon="xray"><span>X-ray</span></button>
+  <button data-tool="sun" data-icon="sun"><span>Sun</span></button>
+  <button data-tool="shot" data-icon="camera"><span>Photo</span></button>
+  <button data-tool="record" data-icon="record"><span>Record</span></button>
+  <button data-tool="settings" data-icon="settings"><span>More</span></button>
+</nav>
+
+<div id="dock">
+  <section id="panel" class="glass" hidden>
+    <div class="ph"><h2 id="panelTitle"></h2><button id="panelClose" class="ib" data-icon="close" title="Close"></button></div>
+    <div id="panelBody"></div>
+  </section>
+
+  <div id="selbar" class="bar glass" hidden>
+    <div class="barname"><button id="selUp" class="ib sm" data-icon="up" title="Select the group it is in"></button><span id="selName"></span></div>
+    <div class="baracts">
+      <button data-sel="info" data-icon="info"><span>Info</span></button>
+      <button data-sel="zoom" data-icon="zoom"><span>Zoom</span></button>
+      <button data-sel="hide" data-icon="eyeOff"><span>Hide</span></button>
+      <button data-sel="isolate" data-icon="isolate"><span>Isolate</span></button>
+      <button data-sel="ghost" data-icon="ghost"><span>See-thru</span></button>
+      <button data-sel="move" data-icon="move"><span>Move</span></button>
+      <button data-sel="close" data-icon="close"><span>Done</span></button>
+    </div>
+  </div>
+
+  <div id="movebar" class="bar glass" hidden>
+    <div class="barname"><span id="moveName"></span></div>
+    <div class="baracts">
+      <button data-mv="translate" data-icon="move"><span>Move</span></button>
+      <button data-mv="rotate" data-icon="rotate"><span>Rotate</span></button>
+      <button data-mv="free" data-icon="up"><span>Up/down</span></button>
+      <button data-mv="snap" data-icon="target"><span>Snap</span></button>
+      <button data-mv="undo" data-icon="undo"><span>Undo</span></button>
+      <button data-mv="reset" data-icon="reset"><span>Reset</span></button>
+      <button data-mv="done" data-icon="close"><span>Done</span></button>
+    </div>
+  </div>
+
+  <div id="buildbar" class="bar glass" hidden>
+    <div class="barname"><span id="buildStage"></span></div>
+    <div class="buildmm" id="buildMM"></div>
+    <input type="range" id="buildRange" min="0" max="1000" step="1" value="0">
+    <div class="baracts">
+      <button data-bd="prev" data-icon="prev"><span>Stage</span></button>
+      <button data-bd="play" data-icon="play"><span>Play</span></button>
+      <button data-bd="next" data-icon="next"><span>Stage</span></button>
+      <button data-bd="ghost" data-icon="ghost"><span>Show rest</span></button>
+      <button data-bd="orbit" data-icon="rotate"><span>Orbit</span></button>
+      <button data-bd="speed" data-icon="clock"><span id="buildSpeed">40 s</span></button>
+      <button data-bd="rec" data-icon="record"><span>Record</span></button>
+      <button data-bd="order" data-icon="tree"><span id="buildOrder">Order</span></button>
+      <button data-bd="done" data-icon="close"><span>Done</span></button>
+    </div>
+  </div>
+
+  <div id="measurebar" class="bar glass" hidden>
+    <div class="barname"><span id="measureHint">Tap two points. Corners snap.</span></div>
+    <div class="baracts">
+      <button data-ms="undo" data-icon="undo"><span>Undo</span></button>
+      <button data-ms="clear" data-icon="trash"><span>Clear</span></button>
+      <button data-ms="unit" data-icon="measure"><span id="unitLabel">m</span></button>
+      <button data-ms="done" data-icon="close"><span>Done</span></button>
+    </div>
+  </div>
+</div>
+
+<div id="walkui" hidden>
+  <div id="joy"><div id="joyKnob"></div></div>
+  <div id="walkHint" class="glass">Tap the floor where you want to stand</div>
+  <div class="walkbtns glass">
+    <button data-wk="fly" data-icon="up"><span>Fly</span></button>
+    <button data-wk="up" data-icon="up" hidden><span>Up</span></button>
+    <button data-wk="down" data-icon="down" hidden><span>Down</span></button>
+    <button data-wk="collide" data-icon="xray"><span>Walls</span></button>
+    <button data-wk="exit" data-icon="close"><span>Exit</span></button>
+  </div>
+</div>
+
+<div id="rec" class="glass" hidden><i></i><span id="recTime">0:00</span><button id="recStop" class="ib sm" data-icon="stop" title="Stop recording"></button></div>
+<div id="toast"></div>
+
+<div id="welcome">
+  <div class="wbox">
+    <h1>Model Viewer</h1>
+    <p class="sub">SketchUp (exported .glb) · COLLADA .dae · glTF</p>
+    <button id="wOpen" class="big">Open a model file</button>
+    <div id="wPC" hidden><h3>From the PC (Wi-Fi)</h3><ul id="pcList"></ul></div>
+    <div id="wRecent" hidden><h3>On this phone</h3><ul id="recentList"></ul></div>
+    <p class="help">In SketchUp: Extensions › Model Viewer › Export for phone. Or open the .dae straight from Files, Drive or WhatsApp.</p>
+    <p class="help" id="wDrop">On a computer you can also drop files here.</p>
+  </div>
+</div>
+
+<div id="busy" hidden><div class="bbox"><div class="spin"></div><div id="busyText">Opening…</div><div class="pbar"><i id="busyBar"></i></div></div></div>
+
+<div id="saveDlg" hidden>
+  <div class="sbox glass">
+    <div class="preview"></div>
+    <div class="fname"></div>
+    <div class="hint"></div>
+    <div class="sacts">
+      <button data-act="share" class="big"></button>
+      <button data-act="save" class="big alt"></button>
+      <button data-act="close" class="big alt">Close</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="file" multiple hidden>
+<input type="file" id="orderFile" hidden>
+</body>
+</html>
