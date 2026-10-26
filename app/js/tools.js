@@ -256,7 +256,7 @@ export class WalkTool {
     this.vy = 0;
     this.tick = dt => this.update(dt);
     this.onKey = e => {
-      if (!this.active || e.target.tagName === 'INPUT') return;
+      if (!this.active || ['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
       const k = e.key.toLowerCase();
       if ('wasdqe'.includes(k) || k.startsWith('arrow') || k === 'shift') {
         e.type === 'keydown' ? this.keys.add(k) : this.keys.delete(k);

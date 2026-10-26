@@ -2,7 +2,8 @@
 const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 const stamp = () => new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '_');
-const safe = s => (s || 'model').replace(/\.[^.]+$/, '').replace(/[^\w.-]+/g, '_');
+// file-name stem: drops a model extension only (names like "Rev05_26.10.2026" keep their dots)
+const safe = s => (s || 'model').replace(/\.(skp|glb|gltf|dae)$/i, '').replace(/[^\w.-]+/g, '_');
 
 export async function screenshot(viewer, scale = 1) {
   const r = viewer.renderer;

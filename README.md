@@ -89,6 +89,7 @@ Isolate, See-thru, Move.
 | Look | Render style: **Technical** (colours + edge lines), **Shaded** (no lines, soft corners), **White model** (architectural white), **Sketch** (black lines on white), **Realistic** (materials, textures, studio sky light, sun shadows, grass). Background (light grey, white, sky, dark), ground (none, grass, paving), soft corner shadows (ambient occlusion; on by default on computers only), sun shadows, edge lines, brightness (Realistic). Remembered on each device |
 | Quantities | Count, solid volume, surface area and length per tag, category or object name; only what is shown or everything; isolate a group; **Export CSV** (one line per object with sizes, plus totals) for Excel / Google Sheets |
 | Compare | Pick another revision (.skp, .glb or .dae): parts are matched by name and place; added (green), moved or resized more than 2 cm (orange) and removed (red, drawn where they were) are listed and coloured, the rest fades. Tap a list line to zoom to it |
+| Notes | Add a note, tap the spot: text plus an optional photo (camera or gallery, shrunk to keep many). Numbered pins on the model; the list jumps back to the view each note was made from. Kept on the device per model; Export / Import a small .json to move them between phone and computer |
 | Sun | Shadows on/off, time of day, date, Play the day, **Record the day**, site location (Yangon / Mandalay buttons) |
 | Photo | Screenshot (size 1x / 2x / 3x in More) |
 | Record | Records the 3D view to video (MP4 on iPhone and recent Android Chrome, else WebM) |

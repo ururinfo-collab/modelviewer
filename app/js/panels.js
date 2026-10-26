@@ -7,9 +7,9 @@ import { icon } from './icons.js';
 import { STYLES, BACKGROUNDS, GROUNDS } from './look.js';
 import { quantities, toCSV } from './quantities.js';
 
-export const APP_VERSION = '1.12.0';
+export const APP_VERSION = '1.13.0';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look', qty: 'Quantities', compare: 'Compare revisions' };
+const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look', qty: 'Quantities', compare: 'Compare revisions', notes: 'Notes' };
 
 export class Panels {
   constructor(app) {
@@ -373,6 +373,31 @@ export class Panels {
     if (this.name === 'sun') this.render('sun');
   }
 
+  // ---- notes ------------------------------------------------------------------------
+
+  notes() {
+    const N = this.app.notes;
+    let h = '<div class="btnrow"><button class="btn primary" data-act="add">Add a note</button>' +
+      '<button class="btn" data-act="export">Export</button><button class="btn" data-act="import">Import</button></div>';
+    h += `<label class="toggle">Show the pins<input type="checkbox" data-k="pins" ${N.visible ? 'checked' : ''}></label>`;
+    if (!N.list.length) h += '<p class="note">No notes yet. Tap Add a note, then tap the spot on the model.</p>';
+    else h += '<p class="note">Saved on this device for this model. Export to move them to another phone or computer.</p>';
+    h += N.list.map((n, i) => `<div class="row"><span class="nm" data-open="${n.id}"><b>${i + 1}.</b> ${esc(n.text.split('\n')[0] || '(no text)')}` +
+      `<small>${n.date}${n.photo ? ' · photo' : ''}</small></span>` +
+      `<button class="ib" data-goto="${n.id}" data-icon="zoom" title="Go to its view"></button></div>`).join('');
+    this.body.innerHTML = h;
+    this.body.onclick = e => {
+      const t = e.target.closest('[data-act],[data-open],[data-goto]');
+      if (!t) return;
+      if (t.dataset.act === 'add') return this.app.startNote();
+      if (t.dataset.act === 'export') return this.app.saveFile(N.exportFile());
+      if (t.dataset.act === 'import') return document.getElementById('notesFile').click();
+      if (t.dataset.open) return this.app.openNote(t.dataset.open);
+      if (t.dataset.goto) N.go(t.dataset.goto);
+    };
+    this.body.onchange = e => { if (e.target.dataset.k === 'pins') N.setVisible(e.target.checked); };
+  }
+
   // ---- revision compare -------------------------------------------------------------
 
   compare() {
@@ -439,7 +464,7 @@ export class Panels {
       if (b.dataset.by) { this.qtyBy = b.dataset.by; return this.render('qty'); }
       if (b.dataset.act === 'csv') {
         const csv = toCSV(groups, label[by]);
-        const name = `${(v.modelName || 'model').replace(/\.[^.]+$/, '')}_quantities_by_${label[by].toLowerCase()}.csv`;
+        const name = `${(v.modelName || 'model').replace(/\.(skp|glb|gltf|dae)$/i, '')}_quantities_by_${label[by].toLowerCase()}.csv`;
         return this.app.saveFile({ blob: new Blob([csv], { type: 'text/csv' }), name });
       }
       if (b.dataset.iso != null) {

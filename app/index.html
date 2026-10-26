@@ -49,6 +49,7 @@
   <button data-tool="look" data-icon="palette"><span>Look</span></button>
   <button data-tool="qty" data-icon="list"><span>Quantities</span></button>
   <button data-tool="compare" data-icon="compare"><span>Compare</span></button>
+  <button data-tool="notes" data-icon="note"><span>Notes</span></button>
   <button data-tool="sun" data-icon="sun"><span>Sun</span></button>
   <button data-tool="shot" data-icon="camera"><span>Photo</span></button>
   <button data-tool="record" data-icon="record"><span>Record</span></button>
@@ -153,7 +154,7 @@
     <div id="wRecent" hidden><h3>On this phone</h3><ul id="recentList"></ul></div>
     <p class="help">Open a .skp straight from Files, Drive or WhatsApp. For the geo-location and hidden objects in scenes, use SketchUp › Extensions › Model Viewer › Export (.glb).</p>
     <p class="help" id="wDrop">On a computer you can also drop files here.</p>
-    <p class="help">Version 1.12.0</p>
+    <p class="help">Version 1.13.0</p>
   </div>
 </div>
 
@@ -175,5 +176,25 @@
 <input type="file" id="file" multiple hidden>
 <input type="file" id="orderFile" hidden>
 <input type="file" id="compareFile" multiple hidden>
+<input type="file" id="notesFile" accept=".json,application/json" hidden>
+<input type="file" id="notePhotoFile" accept="image/*" hidden>
+
+<div id="noteDlg" hidden>
+  <div class="sbox glass">
+    <h3 id="noteTitle" style="margin:4px 2px 8px">Note</h3>
+    <textarea id="noteText" rows="4" placeholder="What is here? (crack, change, question for the site...)"></textarea>
+    <div id="notePhoto"></div>
+    <div class="btnrow">
+      <button class="btn" data-nd="photo">Add photo</button>
+      <button class="btn" data-nd="nophoto" hidden>Remove photo</button>
+      <button class="btn" data-nd="go" hidden>Go to its view</button>
+      <button class="btn" data-nd="delete" hidden>Delete note</button>
+    </div>
+    <div class="sacts">
+      <button data-nd="save" class="big">Save</button>
+      <button data-nd="close" class="big alt">Cancel</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>

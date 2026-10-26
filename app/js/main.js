@@ -8,6 +8,7 @@ import { Sequence } from './sequence.js';
 import { History } from './history.js';
 import { Look } from './look.js';
 import { Compare } from './compare.js';
+import { Notes, shrinkPhoto } from './notes.js';
 import { screenshot, Recorder, showSave } from './capture.js';
 import { saveRecent, listRecent, getRecent, deleteRecent, getSetting, setSetting } from './store.js';
 import { Panels, esc } from './panels.js';
@@ -46,6 +47,9 @@ app.panels = new Panels(app);
 app.look = new Look(app);
 app.look.apply();
 app.compare = new Compare(app);
+app.notes = new Notes(app, $('#labels'));
+app.notes.onChange = () => { if (app.panels.name === 'notes') app.panels.render('notes', true); };
+app.notes.onOpen = id => openNote(id);
 app.move.onBeforeChange = label => app.history.record(label);
 app.move.onNoChange = () => app.history.dropLast();
 
@@ -118,11 +122,12 @@ async function openFiles(files, keep = true) {
     if (loaded.sequence) keepOrder(loaded.sequence);    // opened together with the model: keep it too
     app.move = resetMove();
     app.history.clear();
-    $('#title').textContent = viewer.meta.title || main.name.replace(/\.[^.]+$/, '');
+    $('#title').textContent = viewer.meta.title || main.name.replace(/\.(skp|glb|gltf|dae)$/i, '');
     document.title = $('#title').textContent;
     $('#welcome').hidden = true;
     app.section.set('off');
     app.measure.clear();
+    app.notes.load();
     app.panels.sunInit();
     buildScenes();
     if (keep) saveRecent([main, ...files.filter(f => f !== main)]);
@@ -461,7 +466,7 @@ $('#tools').onclick = async e => {
   if (!b) return;
   const t = b.dataset.tool;
   if (!viewer.root && t !== 'settings') return toast('Open a model first');
-  if (['layers', 'tree', 'section', 'sun', 'settings', 'look', 'qty', 'compare'].includes(t)) {
+  if (['layers', 'tree', 'section', 'sun', 'settings', 'look', 'qty', 'compare', 'notes'].includes(t)) {
     if (app.tool === 'walk' || app.tool === 'measure' || app.tool === 'build') exitTools();
     return togglePanel(t);
   }
@@ -716,6 +721,68 @@ $('#orderMenu').onclick = e => {
     try { localStorage.removeItem(ORDERS_KEY); } catch { /* private mode */ }
     if (app.seq.data && app.seq.data !== app.loaded.sequence) useOrder('auto');
   }
+};
+
+// ---- notes: tap a spot, write, optional photo ------------------------------------
+
+let noteDraft = null;     // { id?, point?, photo }
+function startNote() {
+  app.panels.close();
+  setTool('note');
+  toast('Tap the spot on the model for the note', 3000);
+}
+app.startNote = startNote;
+
+function showNoteDlg(draft, text) {
+  noteDraft = draft;
+  $('#noteTitle').textContent = draft.id ? `Note ${app.notes.list.findIndex(n => n.id === draft.id) + 1}` : 'New note';
+  $('#noteText').value = text || '';
+  $('#notePhoto').innerHTML = draft.photo ? `<img src="${draft.photo}" alt="">` : '';
+  $('#noteDlg [data-nd=nophoto]').hidden = !draft.photo;
+  $('#noteDlg [data-nd=go]').hidden = !draft.id;
+  $('#noteDlg [data-nd=delete]').hidden = !draft.id;
+  $('#noteDlg').hidden = false;
+  if (!draft.id) setTimeout(() => $('#noteText').focus(), 50);
+}
+
+function openNote(id) {
+  const n = app.notes.list.find(x => x.id === id);
+  if (n) showNoteDlg({ id, photo: n.photo }, n.text);
+}
+app.openNote = openNote;
+
+$('#noteDlg').onclick = async e => {
+  const a = e.target.closest('[data-nd]')?.dataset.nd;
+  if (!a) return;
+  const N = app.notes, d = noteDraft;
+  if (a === 'photo') return $('#notePhotoFile').click();
+  if (a === 'nophoto') { d.photo = null; $('#notePhoto').innerHTML = ''; e.target.closest('button').hidden = true; return; }
+  if (a === 'go') { N.go(d.id); }
+  if (a === 'delete' && confirm('Delete this note?')) N.remove(d.id);
+  if (a === 'save') {
+    const text = $('#noteText').value.trim();
+    if (d.id) N.update(d.id, text, d.photo);
+    else if (!N.add(d.point, text, d.photo)) toast('Device storage is full: the note is shown now but may not be kept', 5000);
+  }
+  if (a !== 'photo') { $('#noteDlg').hidden = true; noteDraft = null; }
+};
+
+$('#notePhotoFile').onchange = async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f || !noteDraft) return;
+  try {
+    noteDraft.photo = await shrinkPhoto(f);
+    $('#notePhoto').innerHTML = `<img src="${noteDraft.photo}" alt="">`;
+    $('#noteDlg [data-nd=nophoto]').hidden = false;
+  } catch { toast('Could not read that picture'); }
+};
+
+$('#notesFile').onchange = async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  try { toast(`${app.notes.importData(JSON.parse(await f.text()))} notes imported`); } catch (err) { alert(err.message); }
 };
 
 $('#compareFile').onchange = async e => {
@@ -1059,6 +1126,14 @@ function onTap(x, y) {
   }
   if (t === 'measure') return app.measure.onTap(x, y);
   if (t === 'build') return;           // the build plays; nothing to pick
+  if (t === 'note') {
+    const h = viewer.pick(x, y);
+    if (!h) return;
+    const n = h.face.normal.clone().transformDirection(h.object.matrixWorld);
+    setTool(null);
+    showNoteDlg({ point: h.point.clone().addScaledVector(n, 0.02), photo: null });
+    return;
+  }
   if (t === 'sectionPick') {
     const h = viewer.pick(x, y);
     if (h) { app.section.set('face', h); setTool(null); if (app.panels.name === 'section') app.panels.render('section'); }
@@ -1089,7 +1164,7 @@ function onTap(x, y) {
 }
 
 addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
   if (e.key === 'Escape') { if (app.tool) exitTools(); else viewer.select(null); }
   if ((e.key === 'Delete' || e.key === 'h') && viewer.selected && !app.tool) {
     app.history.record(`Hide ${viewer.selected.name}`);

@@ -147,6 +147,16 @@ table.info td:first-child { color: var(--ink2); width: 34%; padding-right: 8px; 
 .walkbtns button.on, .walkbtns button.on svg { color: var(--accent); }
 body.walking #tools, body.walking #scenesWrap, body.walking #dock { display: none; }
 
+/* ---- notes ---- */
+.pin { position: absolute; left: 0; top: 0; pointer-events: auto; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 13px 13px 13px 2px;
+  background: #2f6fe0; color: #fff; font: 700 12.5px/26px system-ui, sans-serif; box-shadow: 0 2px 6px rgba(0,0,0,.3); border: 2px solid #fff; }
+.pin.photo::after { content: ' 📷'; font-size: 10px; }
+#noteDlg { position: fixed; inset: 0; z-index: 25; background: rgba(20,25,30,.45); display: grid; place-items: center; padding: 16px; }
+#noteText { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font: inherit; resize: vertical; background: #fff;
+  -webkit-user-select: text; user-select: text; }
+#notePhoto img { width: 100%; max-height: 36vh; object-fit: contain; border-radius: 10px; margin-top: 8px; background: #fff; }
+.row .nm .ntext { white-space: normal; }
+
 /* ---- computer extras: hover name, right-click menu, north arrow ---- */
 #hoverTip { position: fixed; z-index: 9; pointer-events: none; background: rgba(31,38,45,.88); color: #fff; font-size: 12.5px;
   padding: 3px 8px; border-radius: 6px; white-space: nowrap; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; }
