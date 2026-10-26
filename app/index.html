@@ -47,6 +47,7 @@
   <button data-tool="build" data-icon="build"><span>Build</span></button>
   <button data-tool="xray" data-icon="xray"><span>See-thru</span></button>
   <button data-tool="look" data-icon="palette"><span>Look</span></button>
+  <button data-tool="ai" data-icon="spark"><span>AI render</span></button>
   <button data-tool="qty" data-icon="list"><span>Quantities</span></button>
   <button data-tool="compare" data-icon="compare"><span>Compare</span></button>
   <button data-tool="notes" data-icon="note"><span>Notes</span></button>
@@ -161,7 +162,7 @@
     <div id="wRecent" hidden><h3>On this phone</h3><ul id="recentList"></ul></div>
     <p class="help">Open a .skp straight from Files, Drive or WhatsApp. For the geo-location and hidden objects in scenes, use SketchUp › Extensions › Model Viewer › Export (.glb).</p>
     <p class="help" id="wDrop">On a computer you can also drop files here.</p>
-    <p class="help">Version 1.17.0</p>
+    <p class="help">Version 1.18.0</p>
   </div>
 </div>
 
@@ -176,6 +177,22 @@
       <button data-act="share" class="big"></button>
       <button data-act="save" class="big alt"></button>
       <button data-act="close" class="big alt">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="aiDlg" hidden>
+  <div class="sbox glass">
+    <div class="aicmp" id="aiCmp">
+      <img id="aiAfter" alt="AI render">
+      <div class="before"><img id="aiBefore" alt="Model view"></div>
+      <i></i><b class="l">Model</b><b class="r">AI</b>
+    </div>
+    <div class="fname" id="aiName"></div>
+    <div class="sacts">
+      <button data-ai="save" class="big">Save / Share</button>
+      <button data-ai="again" class="big alt">Render again</button>
+      <button data-ai="close" class="big alt">Close</button>
     </div>
   </div>
 </div>

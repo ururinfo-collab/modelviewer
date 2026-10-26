@@ -10,6 +10,7 @@ import { Look } from './look.js';
 import { Compare } from './compare.js';
 import { Notes, shrinkPhoto } from './notes.js';
 import { AR, arSupported, SCALES } from './ar.js';
+import { AIRender } from './ai.js';
 import { screenshot, Recorder, showSave } from './capture.js';
 import { saveRecent, listRecent, getRecent, deleteRecent, getSetting, setSetting } from './store.js';
 import { Panels, esc } from './panels.js';
@@ -467,7 +468,7 @@ $('#tools').onclick = async e => {
   if (!b) return;
   const t = b.dataset.tool;
   if (!viewer.root && t !== 'settings') return toast('Open a model first');
-  if (['layers', 'tree', 'section', 'sun', 'settings', 'look', 'qty', 'compare', 'notes'].includes(t)) {
+  if (['layers', 'tree', 'section', 'sun', 'settings', 'look', 'qty', 'compare', 'notes', 'ai'].includes(t)) {
     if (app.tool === 'walk' || app.tool === 'measure' || app.tool === 'build') exitTools();
     return togglePanel(t);
   }
@@ -722,6 +723,44 @@ $('#orderMenu').onclick = e => {
   if (a === 'forget' && confirm('Remove the build orders saved on this phone?')) {
     try { localStorage.removeItem(ORDERS_KEY); } catch { /* private mode */ }
     if (app.seq.data && app.seq.data !== app.loaded.sequence) useOrder('auto');
+  }
+};
+
+// ---- AI render: model view beside the AI picture, drag to compare ------------------------
+
+app.ai = new AIRender(app);
+let aiShown = null;
+function showAIResult(r) {
+  aiShown = r;
+  $('#aiAfter').src = r.url;
+  $('#aiBefore').src = r.before;
+  $('#aiName').textContent = `${r.preset} · ${r.engine === 'pc' ? 'PC' : 'Gemini'} · ${r.seconds ?? '?'} s · ${(r.blob.size / 1048576).toFixed(1)} MB`;
+  $('#aiCmp').style.setProperty('--cut', '50%');
+  $('#aiDlg').hidden = false;
+}
+app.showAIResult = showAIResult;
+app.ai.onResult = r => { showAIResult(r); if (app.panels.name === 'ai') app.panels.render('ai', true); };
+
+$('#aiCmp').onpointerdown = e => {
+  const el = $('#aiCmp'), move = ev => {
+    const b = el.getBoundingClientRect();
+    el.style.setProperty('--cut', `${Math.max(0, Math.min(100, (ev.clientX - b.left) / b.width * 100))}%`);
+  };
+  move(e);
+  el.setPointerCapture(e.pointerId);
+  el.onpointermove = move;
+  el.onpointerup = el.onpointercancel = () => { el.onpointermove = null; };
+};
+
+$('#aiDlg').onclick = e => {
+  const a = e.target.closest('[data-ai]')?.dataset.ai;
+  if (!a) return;
+  if (a === 'save') return app.saveFile({ blob: aiShown.blob, name: aiShown.name });
+  $('#aiDlg').hidden = true;
+  if (a === 'again') {
+    app.ai.render().catch(err => toast(err.message, 6000));
+    if (app.panels.name !== 'ai') { app.panels.open('ai'); setToolButtons(); }
+    else app.panels.render('ai', true);
   }
 };
 

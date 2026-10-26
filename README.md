@@ -20,7 +20,7 @@ Rev05 `.skp` (8.9 MB) reads in about 3 s on the PC; expect 10 to 20 s on a phone
 | `app/` | The phone app (HTML + JS, three.js r180 in `app/vendor`). This is what GitHub Pages publishes |
 | `sketchup/` | SketchUp extension source; `python sketchup/build.py` makes `sketchup/dist/ModelViewer-1.0.0.rbz` |
 | `exports/` | Exported models the Wi-Fi link offers to the phone (not uploaded anywhere) |
-| `tools/serve.py` | Wi-Fi link: serves the app and `exports/` on port 8765 |
+| `tools/serve.py` | Wi-Fi link: serves the app and `exports/` on port 8765, and runs AI renders on the PC (`/ai/...`) |
 | `tools/sequence_from_buildlapse.py` | Turns a BuildLapse job into a build order for the time-lapse |
 | `Serve to phone.bat` | Starts the Wi-Fi link without SketchUp |
 
@@ -87,6 +87,7 @@ Isolate, See-thru, Move.
 | Build | Construction time-lapse, see below |
 | See-thru | Choose **Solid**, **See inside** (walls, roof, ceilings, floors, doors, windows, railings and boundary see-through; furniture, fittings, pipes, AC and stairs solid, so you look in from outside; taps go through the shell) or **X-ray** (everything see-through, selection solid). Calibrated on BuildLapse: 16 % opacity, faces tinted toward glass, faint grey edge lines. Also clears objects made see-through one by one. In See inside and X-ray nothing blocks you: zooming keeps flying forward through walls and furniture, and Walk passes through them (you still follow floors and stairs, never furniture) |
 | Look | Render style: **Technical** (colours + edge lines), **Shaded** (no lines, soft corners), **White model** (architectural white), **Sketch** (black lines on white), **Realistic** (materials, textures, studio sky light, sun shadows, grass). Background (light grey, white, sky, dark), ground (none, grass, paving), soft corner shadows (ambient occlusion; on by default on computers only), sun shadows, edge lines, brightness (Realistic). Remembered on each device |
+| AI render | Photoreal picture of the current view through SketchRender's engines, see below |
 | Quantities | Count, solid volume, surface area and length per tag, category or object name; only what is shown or everything; isolate a group; **Export CSV** (one line per object with sizes, plus totals) for Excel / Google Sheets |
 | Compare | Pick another revision (.skp, .glb or .dae): parts are matched by name and place; added (green), moved or resized more than 2 cm (orange) and removed (red, drawn where they were) are listed and coloured, the rest fades. Tap a list line to zoom to it |
 | Notes | Add a note, tap the spot: text plus an optional photo (camera or gallery, shrunk to keep many). Numbered pins on the model; the list jumps back to the view each note was made from. Kept on the device per model; Export / Import a small .json to move them between phone and computer. Delete one with its bin in the list (or Delete in the note), or Delete all notes |
@@ -105,6 +106,27 @@ and tilting. Snap = 5 cm and 15°. Undo steps back; Reset puts the object back. 
 - iPhone (Wi-Fi link): touch and hold the picture › Save to Photos; videos go to Files first.
 - Android: "Save to phone" puts it in Downloads (shows in Gallery / Photos); "Share" sends it anywhere.
 - The phone's own screen recorder also works and includes the buttons.
+
+## AI render (SketchRender)
+
+Frame the view, tap **AI render**, pick a style (Daylight, Myanmar tropical, Dusk, Overcast, Interior warm,
+Interior bright, White clay model), optionally type extras, **Render this view**. The result opens beside the
+model view: drag across it to compare, then Save / Share or Render again. Hidden parts and section cuts carry
+into the picture; See inside / X-ray are rendered as Solid. Results of the session show as thumbnails in the panel.
+
+The viewer makes the same four pictures SketchRender takes in SketchUp (view without edge lines, black line
+drawing, depth map, depth map without the ground) and uses the same prompts. Two engines:
+
+| Engine | How | Cost / time |
+|---|---|---|
+| **PC** | The Wi-Fi server (`tools/serve.py`) hands the pictures to SketchRender's local engine (ComfyUI, RealVisXL + ControlNet Union) in `Desktop\SketchRender\local\` on the RTX 3070, same workflow as SketchRender (Freedom Low / Medium / High, Extra detail). The engine starts on the first render in a minimised "SketchRender local engine" window (about a minute) and stays loaded; close that window to free the graphics card | free; about 30 s once loaded |
+| **Gemini** | Google's Nano Banana (Standard or Best/Pro, 1K / 2K / 4K), called straight from the device with your Google API key (AI render settings › Gemini key; kept on that device only) | about $0.03 to $0.24 per picture; 10 to 30 s; works anywhere |
+
+**Auto** uses the PC when it answers, else Gemini when a key is saved.
+Reaching the PC: opened from the PC link (`http://<PC>:8765`) it is found by itself. From the GitHub Pages app,
+type the PC address (shown when the server starts, e.g. `192.168.80.14:8765`) in AI render settings; Chrome asks
+once to allow devices on the local network. On the PC itself `localhost:8765` is tried. PC pictures are also kept
+in `SketchRender\local\ComfyUI_windows_portable\ComfyUI\output\ModelViewer\`.
 
 ## Build (construction time-lapse)
 

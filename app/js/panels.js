@@ -6,10 +6,11 @@ import { getSetting, setSetting, listRecent, deleteRecent } from './store.js';
 import { icon } from './icons.js';
 import { STYLES, BACKGROUNDS, GROUNDS } from './look.js';
 import { quantities, toCSV } from './quantities.js';
+import { PRESETS, GEMINI_MODELS } from './ai.js';
 
-export const APP_VERSION = '1.17.0';
+export const APP_VERSION = '1.18.0';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look', qty: 'Quantities', compare: 'Compare revisions', notes: 'Notes' };
+const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look', qty: 'Quantities', compare: 'Compare revisions', notes: 'Notes', ai: 'AI render' };
 
 export class Panels {
   constructor(app) {
@@ -552,6 +553,88 @@ export class Panels {
         this.v.setShadows(S.shadows);
         this.applySun();
       }
+    };
+  }
+
+  // ---- AI render (SketchRender's engines: the PC's graphics card or Gemini) ------------------
+
+  ai() {
+    const A = this.app.ai, S = A.store;
+    const seg = (key, opts) => `<div class="seg">${Object.entries(opts).map(([k, n]) =>
+      `<button data-set="${key}" data-val="${k}" class="${String(S[key]) === k ? 'on' : ''}">${n}</button>`).join('')}</div>`;
+    let h = seg('engine', { auto: 'Auto', pc: 'PC (free)', gemini: 'Gemini' });
+    h += '<p class="note">Style</p><div class="chips">' + PRESETS.map(p =>
+      `<button class="chip ${S.preset === p.id ? 'on' : ''}" data-preset="${p.id}">${p.name}</button>`).join('') + '</div>';
+    h += `<textarea id="aiExtra" rows="2" placeholder="Extra (optional): red clay roof tiles, a white car in the driveway...">${esc(S.extra)}</textarea>`;
+    if (S.engine !== 'gemini') {
+      h += '<p class="note">PC: how far it may stray from the model colours</p>' + seg('freedom', { low: 'Low', medium: 'Medium', high: 'High' });
+      h += `<label class="toggle">PC: extra detail (about twice as long)<input type="checkbox" data-k="detail" ${S.detail ? 'checked' : ''}></label>`;
+    }
+    if (S.engine !== 'pc') {
+      const price = GEMINI_MODELS[S.model]?.price[S.size];
+      h += '<p class="note">Gemini quality and size</p>' + seg('model', Object.fromEntries(Object.entries(GEMINI_MODELS).map(([k, m]) => [k, m.name])));
+      h += seg('size', { '1K': '1K', '2K': '2K', '4K': '4K' });
+      if (price) h += `<p class="note">About $${price.toFixed(3)} per Gemini render (Google list price).</p>`;
+    }
+    h += `<div class="btnrow"><button class="btn primary" data-act="render" ${A.busy ? 'disabled' : ''}>${A.busy ? 'Rendering...' : 'Render this view'}</button>` +
+      (A.busy ? '<button class="btn" data-act="cancel">Cancel</button>' : '') + '</div>';
+    h += `<p class="note" id="aiStatus">${esc(A.status || 'Frame the view, pick a style, render. Hidden parts and section cuts carry into the picture.')}</p>`;
+    if (A.results.length) {
+      h += '<p class="note">This session</p><div class="aithumbs">' + A.results.map((r, i) =>
+        `<button data-res="${i}" title="${esc(r.preset)}"><img src="${r.url}" alt=""></button>`).join('') + '</div>';
+    }
+    h += '<details class="aiset"><summary>AI render settings</summary>';
+    h += `<div class="field"><label>PC address</label><input id="aiPC" type="text" inputmode="url" placeholder="192.168.x.x:8765" value="${esc(S.pc)}"></div>`;
+    h += '<div class="btnrow"><button class="btn" data-act="testpc">Test the PC</button></div>';
+    h += '<p class="note">On the PC run the Model Viewer Wi-Fi server (it also drives SketchRender\'s local engine). Opened from the PC link, the address is found by itself. Chrome may ask once to allow devices on your local network: allow it.</p>';
+    h += `<div class="field"><label>Gemini key</label><input id="aiKey" type="password" autocomplete="off" placeholder="${A.gemini.key ? 'saved on this device' : 'paste the Google API key'}"></div>`;
+    h += '<div class="btnrow"><button class="btn" data-act="savekey">Save key</button><button class="btn" data-act="testkey">Test key</button>' +
+      (A.gemini.key ? '<button class="btn" data-act="forgetkey">Forget key</button>' : '') + '</div>';
+    h += '<p class="note">The key stays on this device only and goes only to Google. Make one at aistudio.google.com/apikey (billing on: images are paid).</p></details>';
+    this.body.innerHTML = h;
+    const status = this.body.querySelector('#aiStatus');
+    A.onStatus = s => { if (this.name === 'ai') { status.textContent = s; if (!A.busy) this.render('ai', true); } };
+    const say = s => { status.textContent = s; };
+    this.body.onclick = async e => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.set) { A.set(b.dataset.set, b.dataset.val); return this.render('ai', true); }
+      if (b.dataset.preset) { A.set('preset', b.dataset.preset); return this.render('ai', true); }
+      if (b.dataset.res) return this.app.showAIResult(A.results[+b.dataset.res]);
+      const act = b.dataset.act;
+      if (act === 'render') {
+        const p = A.render().catch(() => {});
+        this.render('ai', true);
+        return p;
+      }
+      if (act === 'cancel') return A.cancel();
+      if (act === 'testpc') {
+        say('Looking for the PC...');
+        const j = await A.pc.find();
+        return say(!j ? 'The PC did not answer. Is the Wi-Fi server running, and the address right?'
+          : !j.installed ? `PC found (${A.pc.base}) but SketchRender's local engine is not installed there.`
+          : `PC found (${A.pc.base}). Local engine ${j.running ? 'running' : 'starts on the first render (about a minute)'}.`);
+      }
+      if (act === 'savekey') {
+        const k = this.body.querySelector('#aiKey').value.trim();
+        if (!k) return say('Paste the key first.');
+        A.gemini.key = k;
+        this.render('ai', true);
+        return this.app.toast('Gemini key saved on this device');
+      }
+      if (act === 'testkey') {
+        const k = this.body.querySelector('#aiKey').value.trim() || A.gemini.key;
+        if (!k) return say('Paste the key first.');
+        say('Testing the key...');
+        try { await A.gemini.test(k); say('Key works.'); } catch (err) { say(err.message); }
+        return;
+      }
+      if (act === 'forgetkey') { A.gemini.key = ''; return this.render('ai', true); }
+    };
+    this.body.oninput = e => {
+      if (e.target.id === 'aiExtra') A.set('extra', e.target.value);
+      if (e.target.id === 'aiPC') A.set('pc', e.target.value.trim());
+      if (e.target.dataset.k === 'detail') A.set('detail', e.target.checked);
     };
   }
 
