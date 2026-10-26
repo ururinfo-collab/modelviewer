@@ -25,7 +25,8 @@ export class Viewer extends EventTarget {
   constructor(canvas) {
     super();
     this.canvas = canvas;
-    const r = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    // alpha: in AR the camera picture shows through where there is no model
+    const r = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     this.pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
     r.setPixelRatio(this.pixelRatio);
     r.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -99,7 +100,7 @@ export class Viewer extends EventTarget {
 
     new ResizeObserver(() => this.resize()).observe(canvas);
     this.resize();
-    r.setAnimationLoop(() => this.frame());
+    r.setAnimationLoop((time, xrFrame) => this.frame(xrFrame));
   }
 
   requestRender() { this.needsRender = true; }
@@ -257,8 +258,15 @@ export class Viewer extends EventTarget {
     this.requestRender();
   }
 
-  frame() {
+  frame(xrFrame) {
     const dt = Math.min(this.clock.getDelta(), 0.1);
+    // AR session: the phone's pose drives the camera; draw every frame
+    if (this.renderer.xr.isPresenting) {
+      this.onXRFrame?.(xrFrame);
+      for (const t of [...this.tickers]) t(dt);
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
     for (const t of [...this.tickers]) t(dt);
     if (this.controls.enabled) this.controls.update(dt);
     if (this.needsRender || this.tickers.size || this.continuous > 0) {

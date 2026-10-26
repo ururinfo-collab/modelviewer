@@ -9,6 +9,7 @@ import { History } from './history.js';
 import { Look } from './look.js';
 import { Compare } from './compare.js';
 import { Notes, shrinkPhoto } from './notes.js';
+import { AR, arSupported, SCALES } from './ar.js';
 import { screenshot, Recorder, showSave } from './capture.js';
 import { saveRecent, listRecent, getRecent, deleteRecent, getSetting, setSetting } from './store.js';
 import { Panels, esc } from './panels.js';
@@ -503,6 +504,7 @@ $('#tools').onclick = async e => {
     return toast(s.data ? `Build order from ${s.data.model || 'file'}: ${s.stages.length} stages${s.unmatched ? `, ${s.unmatched} new parts placed by type` : ''}`
                         : `Automatic build order: ${s.stages.length} stages`, 3200);
   }
+  if (t === 'ar') return startAR();
   if (t === 'xray') {
     const menu = $('#viewMenu');
     if (!menu.hidden) { menu.hidden = true; return; }
@@ -721,6 +723,44 @@ $('#orderMenu').onclick = e => {
     try { localStorage.removeItem(ORDERS_KEY); } catch { /* private mode */ }
     if (app.seq.data && app.seq.data !== app.loaded.sequence) useOrder('auto');
   }
+};
+
+// ---- AR (Chrome on Android) --------------------------------------------------------
+
+app.ar = new AR(app, $('#arUI'));
+arSupported().then(ok => { $('#tools [data-tool=ar]').hidden = !ok; });
+
+function buildARScale() {
+  $('#arScale').innerHTML = Object.entries(SCALES).map(([k, n]) =>
+    `<button data-scale="${k}" class="${+k === app.ar.scale ? 'on' : ''}">${n}</button>`).join('');
+}
+
+async function startAR() {
+  exitTools();
+  app.panels.close();
+  viewer.select(null);
+  buildARScale();
+  $('#arHint').textContent = 'Starting the camera...';
+  $('#arUI').hidden = false;
+  try {
+    await app.ar.start();
+  } catch (e) {
+    $('#arUI').hidden = true;
+    alert(`AR could not start: ${e.message}\n\nAR needs Chrome on Android with "Google Play Services for AR" installed (Play Store), and the app opened from its https address.`);
+  }
+}
+
+app.ar.onStatus = msg => { $('#arHint').textContent = msg || ''; };
+app.ar.onEnd = () => { $('#arUI').hidden = true; };
+// taps on the AR buttons must not also place the model
+$('#arUI .arbar').addEventListener('beforexrselect', e => e.preventDefault());
+$('#arUI').onclick = e => {
+  const s = e.target.closest('[data-scale]');
+  if (s) { app.ar.setScale(s.dataset.scale); buildARScale(); return; }
+  const a = e.target.closest('[data-ar]')?.dataset.ar;
+  if (a === 'left') app.ar.turn(15);
+  if (a === 'right') app.ar.turn(-15);
+  if (a === 'exit') app.ar.stop();
 };
 
 // ---- notes: tap a spot, write, optional photo ------------------------------------

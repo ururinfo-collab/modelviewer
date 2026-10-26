@@ -147,6 +147,14 @@ table.info td:first-child { color: var(--ink2); width: 34%; padding-right: 8px; 
 .walkbtns button.on, .walkbtns button.on svg { color: var(--accent); }
 body.walking #tools, body.walking #scenesWrap, body.walking #dock { display: none; }
 
+/* ---- AR overlay (shown over the camera picture) ---- */
+#arUI { position: fixed; inset: 0; z-index: 40; pointer-events: none; }
+#arHint { position: absolute; top: calc(16px + var(--sat)); left: 50%; transform: translateX(-50%); width: min(92vw, 420px);
+  padding: 10px 14px; border-radius: 14px; font-size: 14px; text-align: center; }
+#arHint:empty { display: none; }
+.arbar { position: absolute; left: 8px; right: 8px; bottom: calc(14px + var(--sab)); border-radius: 16px; padding: 4px; pointer-events: auto; }
+.arbar .seg { margin: 4px; }
+
 /* ---- notes ---- */
 .pin { position: absolute; left: 0; top: 0; pointer-events: auto; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 13px 13px 13px 2px;
   background: #2f6fe0; color: #fff; font: 700 12.5px/26px system-ui, sans-serif; box-shadow: 0 2px 6px rgba(0,0,0,.3); border: 2px solid #fff; }
