@@ -31,7 +31,7 @@ After moving this folder, run `python sketchup/build.py` and reinstall (the .rbz
 **2. The app on the phone.** Two ways, use either or both:
 
 - **GitHub Pages (recommended, HTTPS).** Installs properly, works offline, Photo/Video go straight to Photos.
-  One-time setup, see "Publishing" below. Then open `https://<your-github-name>.github.io/modelviewer/`
+  Published at **https://ururinfo-collab.github.io/modelviewer/** (repo `ururinfo-collab/modelviewer`, setup in "Publishing" below)
   - iPhone: Safari › Share › Add to Home Screen
   - Android: Chrome › ⋮ › Install app
 - **Wi-Fi link from the PC.** Phone on the same Wi-Fi opens `http://<PC address>:8765/` (the SketchUp dialog
