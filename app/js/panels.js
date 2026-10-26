@@ -6,7 +6,7 @@ import { getSetting, setSetting, listRecent, deleteRecent } from './store.js';
 import { icon } from './icons.js';
 import { STYLES, BACKGROUNDS, GROUNDS } from './look.js';
 
-export const APP_VERSION = '1.7.0';
+export const APP_VERSION = '1.8.0';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look' };
 

@@ -267,7 +267,8 @@ export class Viewer extends EventTarget {
 
   render() {
     // ambient occlusion only on solid views (it would darken see-through glass)
-    if (this.ao && this.composer && this.viewMode === 'solid') this.composer.render();
+    if (this.renderOverride) this.renderOverride();       // photoreal render in progress
+    else if (this.ao && this.composer && this.viewMode === 'solid') this.composer.render();
     else this.renderer.render(this.scene, this.camera);
     for (const f of this.afterRender) f();
   }

@@ -92,6 +92,11 @@ input, select { font: inherit; color: inherit; }
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Myanmar", "Myanmar Text", "Myanmar Sangam MN", sans-serif; }
 #buildRange { width: calc(100% - 16px); margin: 4px 8px 0; accent-color: var(--orange); height: 28px; }
 
+#renderbar .seg { margin: 4px 6px; }
+.seg.sm button { height: 28px; font-size: 12.5px; }
+.pbar.rbar { margin: 2px 8px 4px; }
+.pbar.rbar i { background: var(--orange); }
+
 .menu { border-radius: 14px; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
 .menu .omtitle { font-weight: 600; padding: 6px 10px 2px; }
 .menu button { text-align: left; padding: 10px 12px; border-radius: 10px; }
