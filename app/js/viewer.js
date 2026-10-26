@@ -541,8 +541,20 @@ export class Viewer extends EventTarget {
 
   applyMaterial(mesh) {
     const E = mesh.userData.owner;
-    const key = this.selSet.has(E) ? 'sel' : E.fresh ? 'fresh' : this.isGhost(E) ? 'ghost' : 'base';
+    let key = this.selSet.has(E) ? 'sel' : E.fresh ? 'fresh' : this.isGhost(E) ? 'ghost' : 'base';
     const src = mesh.userData.src;
+    // revision compare: added green, changed orange, unchanged faded
+    const diff = this.diffMats && E.diff && key !== 'sel' ? E.diff : null;
+    if (diff === 'same') key = 'ghost';
+    if (diff === 'added' || diff === 'changed') {
+      const m = this.diffMats[diff];
+      mesh.material = Array.isArray(src) ? src.map(() => m) : m;
+      mesh.userData.ghosted = false;
+      if (mesh.userData.line) mesh.userData.line.material = this.edgeMat;
+      mesh.castShadow = this.shadows;
+      mesh.receiveShadow = this.shadows;
+      return;
+    }
     mesh.material = Array.isArray(src) ? src.map(s => this.variants(s)[key]) : this.variants(src)[key];
     mesh.userData.ghosted = key === 'ghost';
     if (mesh.userData.line) mesh.userData.line.material = key === 'ghost' ? this.edgeGhostMat : this.edgeMat;
@@ -605,7 +617,8 @@ export class Viewer extends EventTarget {
     const visit = (E, hidden, inIso) => {
       hidden = hidden || E.hidden || this.tags.get(E.tag)?.visible === false;
       inIso = inIso || !iso || iso.has(E);
-      const show = !hidden && inIso && this.categories.get(E.cat)?.visible !== false && !(E.unbuilt && !this.seqGhost);
+      const show = !hidden && inIso && this.categories.get(E.cat)?.visible !== false && !(E.unbuilt && !this.seqGhost)
+        && !(this.diffMats && !this.diffShowSame && E.diff === 'same');
       E.obj.visible = !hidden;
       for (const m of E.meshes) m.visible = show;   // after: the object may be the mesh itself
       E.shown = show;

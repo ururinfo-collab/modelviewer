@@ -7,9 +7,9 @@ import { icon } from './icons.js';
 import { STYLES, BACKGROUNDS, GROUNDS } from './look.js';
 import { quantities, toCSV } from './quantities.js';
 
-export const APP_VERSION = '1.11.0';
+export const APP_VERSION = '1.12.0';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look', qty: 'Quantities' };
+const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look', qty: 'Quantities', compare: 'Compare revisions' };
 
 export class Panels {
   constructor(app) {
@@ -371,6 +371,51 @@ export class Panels {
       v.tickers.add(this.playing);
     }
     if (this.name === 'sun') this.render('sun');
+  }
+
+  // ---- revision compare -------------------------------------------------------------
+
+  compare() {
+    const C = this.app.compare, v = this.v;
+    if (!C.active) {
+      this.body.innerHTML = `<p class="note">Compare the open model with another revision of it (.skp, .glb or .dae). ` +
+        `Parts are matched by name and place: <b style="color:#2e9e4f">added</b>, <b style="color:#f08c00">moved or resized</b> ` +
+        `and <b style="color:#d23c2c">removed</b> parts are coloured, the rest fades.</p>` +
+        '<div class="btnrow"><button class="btn primary" data-act="pick">Choose the other revision...</button></div>';
+      this.body.onclick = e => { if (e.target.closest('[data-act=pick]')) document.getElementById('compareFile').click(); };
+      return;
+    }
+    const L = C.lists;
+    const row = (kind, i, name, extra = '') => `<div class="row"><span class="sw" style="background:${{ added: '#2e9e4f', changed: '#f08c00', removed: '#d23c2c' }[kind]}"></span>` +
+      `<span class="nm" data-go="${kind}:${i}">${esc(name)}${extra ? `<small>${extra}</small>` : ''}</span>` +
+      `<button class="ib" data-go="${kind}:${i}" data-icon="zoom" title="Zoom to it"></button></div>`;
+    let h = `<p class="note">Open model compared with <b>${esc(C.otherName)}</b></p>`;
+    h += `<div class="btnrow"><span class="btn" style="background:#2e9e4f;color:#fff">${L.added.length} added</span>` +
+      `<span class="btn" style="background:#f08c00;color:#fff">${L.changed.length} changed</span>` +
+      `<span class="btn" style="background:#d23c2c;color:#fff">${L.removed.length} removed</span>` +
+      `<span class="btn">${L.same.length} same</span></div>`;
+    h += `<label class="toggle">Show unchanged parts (faded)<input type="checkbox" data-k="same" ${C.showSame ? 'checked' : ''}></label>`;
+    h += `<label class="toggle">Show removed parts (red)<input type="checkbox" data-k="removed" ${C.showRemoved ? 'checked' : ''}></label>`;
+    h += '<div class="btnrow"><button class="btn" data-act="end">End comparison</button><button class="btn" data-act="pick">Compare with another file...</button></div>';
+    const cap = (arr, kind, fn) => arr.slice(0, 300).map(fn).join('') + (arr.length > 300 ? `<p class="note">${arr.length - 300} more ${kind}</p>` : '');
+    if (L.added.length) h += '<p class="note" style="margin-top:12px">Added</p>' + cap(L.added, 'added', (E, i) => row('added', i, E.name, E.tag?.split(' ')[0]));
+    if (L.changed.length) h += '<p class="note" style="margin-top:12px">Moved or resized</p>' + cap(L.changed, 'changed', (E, i) => row('changed', i, E.name, `by ${fmt(E.diffBy)}`));
+    if (L.removed.length) h += '<p class="note" style="margin-top:12px">Removed</p>' + cap(L.removed, 'removed', (q, i) => row('removed', i, q.name));
+    this.body.innerHTML = h;
+    this.body.onclick = e => {
+      const t = e.target.closest('[data-go],[data-act]');
+      if (!t) return;
+      if (t.dataset.act === 'end') { C.stop(); return this.render('compare'); }
+      if (t.dataset.act === 'pick') return document.getElementById('compareFile').click();
+      const [kind, i] = t.dataset.go.split(':');
+      if (kind === 'removed') { v.select(null); v.fitBox(L.removed[+i].box.clone().expandByScalar(1)); }
+      else { const E = L[kind][+i]; v.select(E); v.zoomTo(E); }
+    };
+    this.body.onchange = e => {
+      if (e.target.dataset.k === 'same') C.showSame = e.target.checked;
+      if (e.target.dataset.k === 'removed') C.showRemoved = e.target.checked;
+      C.apply();
+    };
   }
 
   // ---- quantities ----------------------------------------------------------------

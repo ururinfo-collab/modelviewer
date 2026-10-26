@@ -7,6 +7,7 @@ import { MoveTool } from './transform.js';
 import { Sequence } from './sequence.js';
 import { History } from './history.js';
 import { Look } from './look.js';
+import { Compare } from './compare.js';
 import { screenshot, Recorder, showSave } from './capture.js';
 import { saveRecent, listRecent, getRecent, deleteRecent, getSetting, setSetting } from './store.js';
 import { Panels, esc } from './panels.js';
@@ -44,6 +45,7 @@ app.history = new History(app);
 app.panels = new Panels(app);
 app.look = new Look(app);
 app.look.apply();
+app.compare = new Compare(app);
 app.move.onBeforeChange = label => app.history.record(label);
 app.move.onNoChange = () => app.history.dropLast();
 
@@ -110,6 +112,7 @@ async function openFiles(files, keep = true) {
     await nextFrame();
     exitTools();
     app.panels.close();
+    app.compare.stop();
     await viewer.setModel(loaded, f => busy(null, 0.1 + f * 0.9));
     app.loaded = loaded;
     if (loaded.sequence) keepOrder(loaded.sequence);    // opened together with the model: keep it too
@@ -458,7 +461,7 @@ $('#tools').onclick = async e => {
   if (!b) return;
   const t = b.dataset.tool;
   if (!viewer.root && t !== 'settings') return toast('Open a model first');
-  if (['layers', 'tree', 'section', 'sun', 'settings', 'look', 'qty'].includes(t)) {
+  if (['layers', 'tree', 'section', 'sun', 'settings', 'look', 'qty', 'compare'].includes(t)) {
     if (app.tool === 'walk' || app.tool === 'measure' || app.tool === 'build') exitTools();
     return togglePanel(t);
   }
@@ -713,6 +716,21 @@ $('#orderMenu').onclick = e => {
     try { localStorage.removeItem(ORDERS_KEY); } catch { /* private mode */ }
     if (app.seq.data && app.seq.data !== app.loaded.sequence) useOrder('auto');
   }
+};
+
+$('#compareFile').onchange = async e => {
+  const files = [...e.target.files].map(f => ({ name: f.name, blob: f }));
+  e.target.value = '';
+  if (!files.length) return;
+  busy(`Reading ${files[0].name} to compare`, 0.4);
+  await nextFrame();
+  try {
+    const L = await app.compare.start(files);
+    toast(`${L.added.length} added, ${L.changed.length} changed, ${L.removed.length} removed`, 4000);
+  } catch (err) { console.error(err); alert(`Could not compare: ${err.message}`); }
+  finally { busy(false); }
+  app.panels.open('compare');
+  setToolButtons();
 };
 
 $('#orderFile').onchange = async e => {
