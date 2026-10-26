@@ -92,18 +92,12 @@ input, select { font: inherit; color: inherit; }
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Myanmar", "Myanmar Text", "Myanmar Sangam MN", sans-serif; }
 #buildRange { width: calc(100% - 16px); margin: 4px 8px 0; accent-color: var(--orange); height: 28px; }
 
-#xraybar .barname { justify-content: space-between; }
-#xrayVal { font-variant-numeric: tabular-nums; color: var(--accent); }
-.xrayrow { display: flex; align-items: center; gap: 8px; padding: 0 8px; }
-.xrayrow small { color: var(--ink2); font-size: 11.5px; }
-#xrayRange { flex: 1; accent-color: var(--accent); height: 30px; }
-
-#orderMenu { border-radius: 14px; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
-#orderMenu .omtitle { font-weight: 600; padding: 6px 10px 2px; }
-#orderMenu button { text-align: left; padding: 10px 12px; border-radius: 10px; }
-#orderMenu button.on { background: rgba(47,111,224,.1); color: var(--accent); }
-#orderMenu button small { display: block; color: var(--ink2); font-size: 12.5px; margin-top: 1px; }
-#orderMenu button:active { background: rgba(47,111,224,.16); }
+.menu { border-radius: 14px; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.menu .omtitle { font-weight: 600; padding: 6px 10px 2px; }
+.menu button { text-align: left; padding: 10px 12px; border-radius: 10px; }
+.menu button.on { background: rgba(47,111,224,.1); color: var(--accent); }
+.menu button small { display: block; color: var(--ink2); font-size: 12.5px; margin-top: 1px; }
+.menu button:active { background: rgba(47,111,224,.16); }
 
 /* ---- panel content ---- */
 .seg { display: flex; background: rgba(31,38,45,.07); border-radius: 10px; padding: 3px; margin: 6px 0 8px; }

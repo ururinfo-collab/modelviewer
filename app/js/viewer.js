@@ -4,11 +4,16 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { categorize } from './categories.js';
+import { autoStage } from './sequence.js';
 
 const CREASE = THREE.MathUtils.degToRad(40);   // same 40 degrees BuildLapse uses for edge lines
 const BG = 0xeef0f2;
 // lets the progress bar paint; unlike setTimeout it is not slowed to 1/s in a background tab
 const yieldToBrowser = () => new Promise(r => { const c = new MessageChannel(); c.port1.onmessage = () => r(); c.port2.postMessage(0); });
+const GHOST_OPACITY = 0.16;
+const GLASS = new THREE.Color().setRGB(0.85, 0.88, 0.92);   // linear, as BuildLapse
+// stages whose parts form the shell: see-through in the "See inside" view (as BuildLapse's X-ray)
+const ENVELOPE = new Set(['fdn', 'col', 'beam', 'slab', 'steel', 'roof', 'wall', 'open', 'fin', 'rail', 'bound']);
 const ease = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
 export class Viewer extends EventTarget {
@@ -60,7 +65,9 @@ export class Viewer extends EventTarget {
     this.continuous = 0;
     this.needsRender = true;
     this.xray = false;
-    this.ghostOpacity = 0.14;
+    this.viewMode = 'solid';
+    // see-through edge lines: lighter grey and fainter, as in BuildLapse
+    this.edgeGhostMat = new THREE.LineBasicMaterial({ color: 0x70757c, transparent: true, opacity: 0.33, depthWrite: false });
     this.edges = true;
     this.shadows = false;
     this.selected = null;
@@ -239,11 +246,15 @@ export class Viewer extends EventTarget {
     const metaTags = new Map((this.meta.tags || []).map(t => [t.name, t]));
     this.tags = new Map();
     // no tag of its own (COLLADA, name groups): the parent's, or at the top level its own name
+    // an untagged part inside a tagged group belongs to the group's tag, as in SketchUp
+    const untagged = t => t == null || /^(untagged|layer0)$/i.test(t);
     const tagOf = E => {
+      const inherited = E.parent && E.parent !== rootEnt && E.parent !== top && !untagged(E.parent.tag) ? E.parent.tag : null;
+      if (E.tag != null && !(untagged(E.tag) && inherited)) return E.tag;
+      if (inherited) return inherited;
       if (E.tag != null) return E.tag;
       if (E.parent === top) return E.name;
-      if (!E.parent || E.parent === rootEnt || E === top) return 'Untagged';
-      return E.parent.tag;
+      return 'Untagged';
     };
     for (const E of this.ents) {           // parents come before children
       if (E === rootEnt) continue;
@@ -270,6 +281,7 @@ export class Viewer extends EventTarget {
       this.categories.get(E.cat).count++;
     }
     this.byPid = new Map(this.ents.filter(E => E.pid != null).map(E => [E.pid, E]));
+    for (const E of this.ents) E.envelope = E.meshes.length > 0 && ENVELOPE.has(autoStage(E));
     // top level made of containers only (tag groups, COLLADA categories): a tap picks the object inside
     const kids = top.children, containers = kids.filter(E => E.children.length && !E.meshes.length).length;
     if (kids.length >= 3 && containers / kids.length >= 0.8) this.objectsUnderTags = true;
@@ -331,10 +343,12 @@ export class Viewer extends EventTarget {
       polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
     }));
     if (base.transparent) base.depthWrite = false;
+    // see-through look calibrated on BuildLapse: 16 % opacity, colour 35 % toward pale glass
     const ghost = this.withSection(base.clone());
     ghost.transparent = true;
-    ghost.userData.maxOpacity = opacity;
-    this.styleGhost(ghost);
+    ghost.depthWrite = false;
+    ghost.opacity = Math.min(opacity, GHOST_OPACITY);
+    ghost.color.lerp(GLASS, 0.35);
     const sel = this.withSection(base.clone());
     sel.emissive = new THREE.Color(0x2f6fe0);
     sel.emissiveIntensity = 0.5;
@@ -349,12 +363,19 @@ export class Viewer extends EventTarget {
     return v;
   }
 
+  // is this part drawn see-through right now
+  isGhost(E) {
+    return E.ghost || (E.unbuilt && this.seqGhost) || this.viewMode === 'xray'
+      || (this.viewMode === 'inside' && E.envelope);
+  }
+
   applyMaterial(mesh) {
     const E = mesh.userData.owner;
-    const key = this.selSet.has(E) ? 'sel' : E.fresh ? 'fresh'
-      : (E.ghost || this.xray || (E.unbuilt && this.seqGhost)) ? 'ghost' : 'base';
+    const key = this.selSet.has(E) ? 'sel' : E.fresh ? 'fresh' : this.isGhost(E) ? 'ghost' : 'base';
     const src = mesh.userData.src;
     mesh.material = Array.isArray(src) ? src.map(s => this.variants(s)[key]) : this.variants(src)[key];
+    mesh.userData.ghosted = key === 'ghost';
+    if (mesh.userData.line) mesh.userData.line.material = key === 'ghost' ? this.edgeGhostMat : this.edgeMat;
     mesh.castShadow = this.shadows && key !== 'ghost';
     mesh.receiveShadow = this.shadows;
   }
@@ -364,27 +385,14 @@ export class Viewer extends EventTarget {
     this.requestRender();
   }
 
-  setXray(on) { this.xray = on; this.styleEdges(); this.refreshMaterials(); }
-
-  // how solid see-through things are (X-ray and See-thru objects), 0.02 .. 0.95
-  setGhostOpacity(x) {
-    this.ghostOpacity = Math.min(0.95, Math.max(0.02, x));
-    for (const v of this.mats.values()) this.styleGhost(v.ghost);
-    this.styleEdges();
-    this.requestRender();
+  // solid | inside (walls, roof, openings, finishes see-through; furniture, services, stairs solid) | xray
+  setViewMode(mode) {
+    this.viewMode = mode;
+    this.xray = mode === 'xray';
+    this.refreshMaterials();
   }
 
-  // in X-ray the edge lines fade with the faces, else the house reads as a dark wire mesh
-  styleEdges() {
-    this.edgeMat.opacity = this.xray ? Math.min(0.6, 0.12 + this.ghostOpacity * 0.8) : 0.6;
-  }
-
-  styleGhost(m) {
-    m.opacity = Math.min(m.userData.maxOpacity ?? 1, this.ghostOpacity);
-    // fairly solid: write depth so faces sort like solid ones; faint: let everything show through
-    const depth = this.ghostOpacity > 0.6;
-    m.depthWrite = depth;
-  }
+  setXray(on) { this.setViewMode(on ? 'xray' : 'solid'); }
 
   setEdges(on) {
     this.edges = on;
@@ -503,18 +511,17 @@ export class Viewer extends EventTarget {
     return this.firstHit(this.raycaster.intersectObjects(list, false));
   }
 
-  firstHit(hits) {
-    for (const h of hits) {
-      if (this.clipPlanes.some(p => p.distanceToPoint(h.point) < 0)) continue;
-      return h;
-    }
-    return null;
+  firstHit(hits, preferSolid = this.viewMode === 'inside') {
+    const open = hits.filter(h => !this.clipPlanes.some(p => p.distanceToPoint(h.point) < 0));
+    // "See inside": a tap goes through the see-through shell to the furniture behind it
+    if (preferSolid) { const solid = open.find(h => !h.object.userData.ghosted); if (solid) return solid; }
+    return open[0] || null;
   }
 
   ray(origin, dir, far) {
     this.raycaster.set(origin, dir);
     this.raycaster.far = far;
-    const h = this.firstHit(this.raycaster.intersectObjects(this.pickables, false));
+    const h = this.firstHit(this.raycaster.intersectObjects(this.pickables, false), false);   // walls and floors count
     this.raycaster.far = Infinity;
     return h;
   }

@@ -415,7 +415,7 @@ $('#btnHome').onclick = () => { if (app.tool === 'walk') exitTools(); viewer.fit
 function setToolButtons() {
   $$('#tools [data-tool]').forEach(b => {
     const t = b.dataset.tool;
-    b.classList.toggle('on', app.panels.name === t || app.tool === t || (t === 'xray' && viewer.xray)
+    b.classList.toggle('on', app.panels.name === t || app.tool === t || (t === 'xray' && viewer.viewMode !== 'solid')
       || (t === 'section' && app.section.mode !== 'off'));
     b.classList.toggle('rec', t === 'record' && app.recorder.active);
   });
@@ -438,6 +438,7 @@ function exitTools() {
 }
 
 function togglePanel(name) {
+  $('#viewMenu').hidden = true;
   if (app.panels.name === name) app.panels.close();
   else app.panels.open(name);
   setToolButtons();
@@ -492,11 +493,9 @@ $('#tools').onclick = async e => {
                         : `Automatic build order: ${s.stages.length} stages`, 3200);
   }
   if (t === 'xray') {
-    viewer.setXray(!viewer.xray);
-    app.xrayBar = viewer.xray;
-    if (viewer.xray) toast('X-ray: everything see-through, the selection stays solid. Slide to adjust.');
-    updateBars();
-    return setToolButtons();
+    const menu = $('#viewMenu');
+    if (!menu.hidden) { menu.hidden = true; return; }
+    return showViewMenu();
   }
   if (t === 'shot') {
     const shot = await screenshot(viewer, app.shotScale);
@@ -602,31 +601,43 @@ $('#buildbar').onclick = e => {
   updateBuildBar();
 };
 
-// ---- transparency bar ----------------------------------------------------------
+// ---- see-through views: Solid / See inside / X-ray -------------------------------
 
-function setSeeThrough(pct, save = true) {
-  viewer.setGhostOpacity(pct / 100);
-  $('#xrayRange').value = pct;
-  $('#xrayVal').textContent = `${Math.round(pct)}%`;
-  if (save) try { localStorage.setItem('mv:ghost', String(pct)); } catch { /* private mode */ }
+const VIEW_LABEL = { solid: 'Solid', inside: 'See inside', xray: 'X-ray' };
+
+function setViewMode(mode) {
+  viewer.setViewMode(mode);
+  $('[data-tool=xray] span').textContent = mode === 'solid' ? 'See-thru' : VIEW_LABEL[mode];
+  setToolButtons();
 }
-try { setSeeThrough(+localStorage.getItem('mv:ghost') || 14, false); } catch { setSeeThrough(14, false); }
 
-$('#xrayRange').oninput = e => setSeeThrough(+e.target.value);
-$('#xraybar').onclick = e => {
-  const a = e.target.closest('[data-xr]')?.dataset.xr;
+function showViewMenu() {
+  const m = viewer.viewMode, ghosts = viewer.ents.filter(E => E.ghost && !E.parent?.ghost).length;
+  const item = (act, label, note) =>
+    `<button data-vm="${act}" class="${m === act ? 'on' : ''}"><b>${m === act ? '✓ ' : ''}${label}</b><small>${note}</small></button>`;
+  $('#viewMenu').innerHTML = '<div class="omtitle">See-through</div>' +
+    item('solid', 'Solid', 'Everything as built') +
+    item('inside', 'See inside', 'Walls, roof, ceilings, doors and windows see-through; furniture, fittings, pipes and stairs solid. Taps go through to what is inside') +
+    item('xray', 'X-ray', 'Everything see-through; the selected object stays solid') +
+    (ghosts ? `<button data-vm="clear"><b>Make ${ghosts} see-through object${ghosts > 1 ? 's' : ''} solid</b><small>Ones set with the See-thru button</small></button>` : '') +
+    '<button data-vm="close"><b>Cancel</b></button>';
+  $('#viewMenu').hidden = false;
+}
+
+$('#viewMenu').onclick = e => {
+  const a = e.target.closest('[data-vm]')?.dataset.vm;
   if (!a) return;
-  if (a === 'all') viewer.setXray(!viewer.xray);
-  if (a === 'solid') {
+  $('#viewMenu').hidden = true;
+  if (VIEW_LABEL[a]) {
+    setViewMode(a);
+    if (a !== 'solid') toast(`${VIEW_LABEL[a]} view`);
+  }
+  if (a === 'clear') {
     app.history.record('Make all solid');
-    viewer.setXray(false);
     for (const E of viewer.ents) E.ghost = false;
     viewer.refreshMaterials();
-    app.xrayBar = false;
+    updateBars();
   }
-  if (a === 'done') app.xrayBar = false;
-  updateBars();
-  setToolButtons();
 };
 
 // Build orders loaded once stay on the phone and work for every revision (parts match by name).
@@ -719,8 +730,7 @@ function updateBars() {
   $('#movebar').hidden = t !== 'move';
   $('#measurebar').hidden = t !== 'measure';
   $('#buildbar').hidden = t !== 'build';
-  $('#xraybar').hidden = !app.xrayBar || !!t;
-  $('#xraybar [data-xr=all]').classList.toggle('on', viewer.xray);
+  if (t) $('#viewMenu').hidden = true;
   if (t !== 'build') $('#orderMenu').hidden = true;
   if (E) $('#selName').textContent = E.name;
   if (E) {
@@ -766,7 +776,6 @@ $('#selbar').onclick = e => {
   if (a === 'ghost') {
     app.history.record(`See-through ${E.name}`);
     viewer.setGhost(E, !E.ghost);
-    if (E.ghost) app.xrayBar = true;     // show the slider so the level can be set
     updateBars();
   }
   if (a === 'move') { app.panels.close(); setTool('move'); app.move.start(E); updateBars(); toast('Drag the arrows. Rotate and Up/down below.'); }
@@ -939,7 +948,7 @@ function updateInset() {
   const w = innerWidth, h = innerHeight;
   // the panel and the tool bars take screen room; the small selection bar does not count, so
   // selecting does not shift the view
-  const blocks = ['#panel', '#buildbar', '#measurebar', '#movebar', '#xraybar'].map(s => $(s)).filter(el => !el.hidden);
+  const blocks = ['#panel', '#buildbar', '#measurebar', '#movebar'].map(s => $(s)).filter(el => !el.hidden);
   if (document.body.classList.contains('walking')) viewer.setInset(0, 0);
   else if (matchMedia('(orientation: landscape)').matches) {
     const left = $('#tools').getBoundingClientRect().right;
@@ -952,7 +961,7 @@ function updateInset() {
   }
 }
 new ResizeObserver(updateInset).observe($('#dock'));
-for (const s of ['#panel', '#buildbar', '#measurebar', '#movebar', '#xraybar']) {
+for (const s of ['#panel', '#buildbar', '#measurebar', '#movebar']) {
   new MutationObserver(updateInset).observe($(s), { attributes: true, attributeFilter: ['hidden'] });
 }
 addEventListener('resize', updateInset);

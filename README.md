@@ -81,7 +81,7 @@ Isolate, See-thru, Move.
 | Measure | Tap two points, corners snap; shows length plus horizontal / vertical parts; units m, mm, ft-in |
 | Walk | Tap where to stand. Left thumb joystick walks, drag elsewhere looks. Follows floors and stairs, walls block (toggle). Fly mode for up / down. Keyboard: WASD, Q/E, Shift |
 | Build | Construction time-lapse, see below |
-| X-ray | Everything see-through; the selection stays solid. A **See-through** bar sets how see-through (2% faint to 95% almost solid, remembered); the same level applies to objects made See-thru. Everything toggles X-ray, All solid clears both |
+| See-thru | Choose **Solid**, **See inside** (walls, roof, ceilings, floors, doors, windows, railings and boundary see-through; furniture, fittings, pipes, AC and stairs solid, so you look in from outside; taps go through the shell) or **X-ray** (everything see-through, selection solid). Calibrated on BuildLapse: 16 % opacity, faces tinted toward glass, faint grey edge lines. Also clears objects made see-through one by one |
 | Sun | Shadows on/off, time of day, date, Play the day, **Record the day**, site location (Yangon / Mandalay buttons) |
 | Photo | Screenshot (size 1x / 2x / 3x in More) |
 | Record | Records the 3D view to video (MP4 on iPhone and recent Android Chrome, else WebM) |

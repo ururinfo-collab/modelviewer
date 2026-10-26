@@ -45,7 +45,7 @@
   <button data-tool="measure" data-icon="measure"><span>Measure</span></button>
   <button data-tool="walk" data-icon="walk"><span>Walk</span></button>
   <button data-tool="build" data-icon="build"><span>Build</span></button>
-  <button data-tool="xray" data-icon="xray"><span>X-ray</span></button>
+  <button data-tool="xray" data-icon="xray"><span>See-thru</span></button>
   <button data-tool="sun" data-icon="sun"><span>Sun</span></button>
   <button data-tool="shot" data-icon="camera"><span>Photo</span></button>
   <button data-tool="record" data-icon="record"><span>Record</span></button>
@@ -100,19 +100,9 @@
       <button data-bd="done" data-icon="close"><span>Done</span></button>
     </div>
   </div>
-  <div id="orderMenu" class="glass" hidden></div>
+  <div id="orderMenu" class="menu glass" hidden></div>
 
-  <div id="xraybar" class="bar glass" hidden>
-    <div class="barname"><span>See-through</span><output id="xrayVal">14%</output></div>
-    <div class="xrayrow">
-      <small>Faint</small><input type="range" id="xrayRange" min="2" max="95" step="1" value="14"><small>Solid</small>
-    </div>
-    <div class="baracts">
-      <button data-xr="all" data-icon="xray"><span>Everything</span></button>
-      <button data-xr="solid" data-icon="eye"><span>All solid</span></button>
-      <button data-xr="done" data-icon="close"><span>Done</span></button>
-    </div>
-  </div>
+  <div id="viewMenu" class="menu glass" hidden></div>
 
   <div id="measurebar" class="bar glass" hidden>
     <div class="barname"><span id="measureHint">Tap two points. Corners snap.</span></div>
@@ -149,7 +139,7 @@
     <div id="wRecent" hidden><h3>On this phone</h3><ul id="recentList"></ul></div>
     <p class="help">Open a .skp straight from Files, Drive or WhatsApp. For the geo-location and hidden objects in scenes, use SketchUp › Extensions › Model Viewer › Export (.glb).</p>
     <p class="help" id="wDrop">On a computer you can also drop files here.</p>
-    <p class="help">Version 1.5.0</p>
+    <p class="help">Version 1.6.0</p>
   </div>
 </div>
 
