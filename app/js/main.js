@@ -74,7 +74,7 @@ async function openFiles(files, keep = true) {
     app.panels.close();
     await viewer.setModel(loaded, f => busy(null, 0.1 + f * 0.9));
     app.loaded = loaded;
-    app.useOrderFile = true;
+    if (loaded.sequence) keepOrder(loaded.sequence);    // opened together with the model: keep it too
     app.move = resetMove();
     $('#title').textContent = viewer.meta.title || main.name.replace(/\.[^.]+$/, '');
     document.title = $('#title').textContent;
@@ -386,7 +386,7 @@ $('#tools').onclick = async e => {
     exitTools();
     viewer.select(null);
     app.panels.close();
-    app.seq.data = app.useOrderFile !== false ? app.loaded.sequence || null : null;
+    app.seq.data = chosenOrder();
     app.seq.start();
     setTool('build');
     updateBuildBar();
@@ -503,26 +503,61 @@ $('#buildbar').onclick = e => {
   updateBuildBar();
 };
 
-// Order button: a small menu, so choosing the automatic order never opens a file picker
-function useOrder(file) {
-  const s = app.seq;
-  app.useOrderFile = !!file;
-  s.stop();
-  s.data = file ? app.loaded.sequence : null;
-  s.start();
-  updateBuildBar();
-  toast(file ? `BuildLapse order: ${s.stages.length} stages` : `Automatic order from tags: ${s.stages.length} stages`);
+// Build orders loaded once stay on the phone and work for every revision (parts match by name).
+// Each model remembers which order it uses ('auto' or an order's name).
+const ORDERS_KEY = 'mv:orders';
+function savedOrders() {
+  try { return JSON.parse(localStorage.getItem(ORDERS_KEY)) || {}; } catch { return {}; }
+}
+function keepOrder(seq) {
+  const name = seq.model || 'BuildLapse order';
+  const all = savedOrders();
+  all[name] = seq;
+  try { localStorage.setItem(ORDERS_KEY, JSON.stringify(all)); } catch { toast('Phone storage full: the order is used now but not kept'); }
+  return name;
+}
+app.keepOrder = keepOrder;
+
+// which order Build starts with for the open model
+function chosenOrder() {
+  const pick = getSetting(viewer.modelName, 'order', null);
+  if (pick === 'auto') return null;
+  if (pick && savedOrders()[pick]) return savedOrders()[pick];
+  if (app.loaded.sequence) return app.loaded.sequence;          // one opened with the model
+  // a new revision: the saved order whose part names match at least a third of this model
+  const names = new Set(viewer.ents.map(E => E.name));
+  let best = null, bestShare = 0.33;
+  for (const o of Object.values(savedOrders())) {
+    const share = o.parts.filter(p => names.has(p[0])).length / Math.max(1, o.parts.length);
+    if (share > bestShare) { best = o; bestShare = share; }
+  }
+  return best;
 }
 
+function useOrder(name) {
+  const s = app.seq;
+  setSetting(viewer.modelName, 'order', name);
+  s.stop();
+  s.data = name === 'auto' ? null : savedOrders()[name] || app.loaded.sequence;
+  s.start();
+  updateBuildBar();
+  toast(s.data ? `BuildLapse order: ${s.stages.length} stages${s.unmatched ? `, ${s.unmatched} new parts placed by tag` : ''}`
+               : `Automatic order from tags: ${s.stages.length} stages`, 3200);
+}
+
+// Order button: a small menu, so choosing the automatic order never opens a file picker
 function showOrderMenu() {
-  const menu = $('#orderMenu'), s = app.seq, seq = app.loaded.sequence;
+  const menu = $('#orderMenu'), s = app.seq, orders = savedOrders();
+  const cur = s.data ? (s.data.model || 'BuildLapse order') : 'auto';
   const item = (act, label, on, note = '') =>
-    `<button data-om="${act}" class="${on ? 'on' : ''}"><b>${on ? '✓ ' : ''}${label}</b>${note ? `<small>${note}</small>` : ''}</button>`;
-  menu.innerHTML = '<div class="omtitle">Build order</div>' +
-    item('auto', 'Automatic', !s.data, 'From the tags (S-FDN, A-WALL, P-WATER...), bottom up') +
-    (seq ? item('file', 'BuildLapse order', !!s.data, `${seq.stages.length} stages${seq.model ? `, from ${esc(seq.model)}` : ''}`) : '') +
-    item('load', 'Load an order file...', false, '.sequence.json made by BuildLapse') +
-    item('close', 'Cancel', false);
+    `<button data-om="${esc(act)}" class="${on ? 'on' : ''}"><b>${on ? '✓ ' : ''}${esc(label)}</b>${note ? `<small>${esc(note)}</small>` : ''}</button>`;
+  let h = '<div class="omtitle">Build order</div>' + item('auto', 'Automatic', cur === 'auto', 'From the tags (S-FDN, A-WALL, P-WATER...), bottom up');
+  for (const [name, o] of Object.entries(orders)) h += item(`o:${name}`, `BuildLapse: ${name}`, cur === name, `${o.stages.length} stages, saved on this phone`);
+  if (s.data && !orders[cur]) h += item(`o:${cur}`, `BuildLapse: ${cur}`, true, `${s.data.stages.length} stages`);
+  h += item('load', 'Load an order file...', false, '.sequence.json from BuildLapse; kept for next time');
+  if (Object.keys(orders).length) h += item('forget', 'Remove saved orders', false);
+  h += item('close', 'Cancel', false);
+  menu.innerHTML = h;
   menu.hidden = false;
 }
 
@@ -530,9 +565,13 @@ $('#orderMenu').onclick = e => {
   const a = e.target.closest('[data-om]')?.dataset.om;
   if (!a) return;
   $('#orderMenu').hidden = true;
-  if (a === 'auto' && app.seq.data) useOrder(false);
-  if (a === 'file' && !app.seq.data) useOrder(true);
+  if (a === 'auto') useOrder('auto');
+  if (a.startsWith('o:')) useOrder(a.slice(2));
   if (a === 'load') $('#orderFile').click();
+  if (a === 'forget' && confirm('Remove the build orders saved on this phone?')) {
+    try { localStorage.removeItem(ORDERS_KEY); } catch { /* private mode */ }
+    if (app.seq.data && app.seq.data !== app.loaded.sequence) useOrder('auto');
+  }
 };
 
 $('#orderFile').onchange = async e => {
@@ -542,13 +581,7 @@ $('#orderFile').onchange = async e => {
   try {
     const j = JSON.parse(await f.text());
     if (!String(j.format || '').startsWith('mv-sequence')) throw new Error('Not a build order file (.sequence.json)');
-    app.loaded.sequence = j;
-    app.useOrderFile = true;
-    app.seq.stop();
-    app.seq.data = j;
-    app.seq.start();
-    updateBuildBar();
-    toast(`Build order loaded: ${j.stages.length} stages`);
+    useOrder(keepOrder(j));
   } catch (err) { alert(err.message); }
 };
 

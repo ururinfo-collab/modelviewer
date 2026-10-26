@@ -109,8 +109,9 @@ English and Myanmar and a progress bar), Order.
   python tools/sequence_from_buildlapse.py "C:/Users/ARKAR/Desktop/BuildLapse/jobs/dho2_0_rev05"
   ```
   This writes `exports/dho2_0_rev05.sequence.json`. Over Wi-Fi the app picks it up by itself (same name as the
-  model, or the only one in `exports/`). From phone storage, select it together with the model, or tap Order in
-  the Build bar and pick it. Parts are matched by name, so the file keeps working as the model changes: parts it
+  model, or the only one in `exports/`). On the phone: send that file to yourself once (WhatsApp, Drive), then in
+  Build tap Order › Load an order file. The phone keeps it: later revisions of the model (any file name) use it
+  by themselves when at least a third of the part names match; Order › Automatic switches back per model. Parts are matched by name, so the file keeps working as the model changes: parts it
   does not know are put in the stage where most of their tag (else category) went; site context
   ("indicative" / Context tags) stays visible throughout.
 
