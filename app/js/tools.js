@@ -1,6 +1,6 @@
 // Section cut, measure, and walk (first person).
 import * as THREE from 'three';
-import { fmt } from './units.js';
+import { fmt, fmtArea } from './units.js';
 
 // ---- section ---------------------------------------------------------------
 // One clipping plane. Back faces seen through the cut are painted the section colour,
@@ -74,8 +74,9 @@ export class MeasureTool {
   constructor(viewer, labelLayer) {
     this.v = viewer;
     this.layer = labelLayer;
-    this.items = [];          // { a, b, line, label }
-    this.pending = null;
+    this.items = [];          // { kind, pts, objs, label, at }
+    this.pending = null;      // { pts, objs } while tapping
+    this.mode = 'dist';
     this.group = new THREE.Group();
     this.group.renderOrder = 10;
     viewer.scene.add(this.group);
@@ -98,72 +99,143 @@ export class MeasureTool {
     return { p: best, snapped };
   }
 
+  // mode: dist (2 taps) | angle (3 taps: end, corner, end) | area (tap the corners, tap the first again or Finish)
+  setMode(mode) {
+    this.cancelPending();
+    this.mode = mode;
+    this.onChange?.();
+  }
+
+  get needed() { return this.mode === 'angle' ? 3 : this.mode === 'area' ? Infinity : 2; }
+
   onTap(x, y) {
     const hit = this.v.pick(x, y);
     if (!hit) return;
     const { p } = this.snap(hit, x, y);
-    if (!this.pending) {
-      this.pending = { p, dot: this.dot(p) };
-    } else {
-      const a = this.pending.p;
-      this.group.remove(this.pending.dot);
-      this.pending = null;
-      this.add(a, p);
+    const pts = this.pending ? this.pending.pts : [];
+    // area: closing on the first corner finishes the shape
+    if (this.mode === 'area' && pts.length >= 3) {
+      const s = this.v.toScreen(pts[0]), r = this.v.canvas.getBoundingClientRect();
+      if (Math.hypot(s.x + r.left - x, s.y + r.top - y) < 24) return this.finish();
     }
+    pts.push(p);
+    this.drawPending(pts);
+    if (pts.length >= this.needed) this.finish();
     this.v.requestRender();
     this.onChange?.();
   }
 
-  dot(p) {
-    const g = new THREE.BufferGeometry().setFromPoints([p]);
-    const d = new THREE.Points(g, this.dotMat);
-    d.renderOrder = 11;
-    this.group.add(d);
-    return d;
+  drawPending(pts) {
+    this.cancelPending(false);
+    const dots = new THREE.Points(new THREE.BufferGeometry().setFromPoints(pts), this.dotMat);
+    dots.renderOrder = 11;
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), this.lineMat);
+    line.renderOrder = 10;
+    this.group.add(dots, line);
+    this.pending = { pts, objs: [dots, line] };
   }
 
-  add(a, b) {
-    const g = new THREE.BufferGeometry().setFromPoints([a, b]);
-    const line = new THREE.LineSegments(g, this.lineMat);
+  cancelPending(clearPts = true) {
+    if (this.pending) {
+      this.group.remove(...this.pending.objs);
+      if (clearPts) this.pending = null;
+      this.v.requestRender();
+    }
+  }
+
+  // complete the current measurement (Finish button for areas)
+  finish() {
+    const pts = this.pending?.pts || [];
+    const mode = this.mode || 'dist';
+    if ((mode === 'area' && pts.length < 3) || (mode !== 'area' && pts.length < this.needed)) return;
+    this.cancelPending();
+    this.add(mode, pts);
+    this.v.requestRender();
+    this.onChange?.();
+  }
+
+  add(kind, pts) {
+    const objs = [];
+    const linePts = kind === 'area' ? [...pts, pts[0]] : pts;
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(linePts), this.lineMat);
     line.renderOrder = 10;
-    const dots = new THREE.Points(new THREE.BufferGeometry().setFromPoints([a, b]), this.dotMat);
+    const dots = new THREE.Points(new THREE.BufferGeometry().setFromPoints(pts), this.dotMat);
     dots.renderOrder = 11;
-    this.group.add(line, dots);
+    objs.push(line, dots);
     const label = document.createElement('div');
     label.className = 'mlabel';
-    const d = a.distanceTo(b), dy = Math.abs(b.y - a.y), dh = Math.hypot(b.x - a.x, b.z - a.z);
-    label.innerHTML = `<b>${fmt(d)}</b>` + (dy > 0.005 && dh > 0.005 ? `<small>H ${fmt(dh)} · V ${fmt(dy)}</small>` : '');
+    let at;
+    if (kind === 'dist') {
+      const [a, b] = pts, d = a.distanceTo(b), dy = Math.abs(b.y - a.y), dh = Math.hypot(b.x - a.x, b.z - a.z);
+      label.innerHTML = `<b>${fmt(d)}</b>` + (dy > 0.005 && dh > 0.005 ? `<small>H ${fmt(dh)} · V ${fmt(dy)}</small>` : '');
+      at = a.clone().add(b).multiplyScalar(0.5);
+    } else if (kind === 'angle') {
+      const [a, o, b] = pts;
+      const deg = THREE.MathUtils.radToDeg(a.clone().sub(o).angleTo(b.clone().sub(o)));
+      label.innerHTML = `<b>${deg.toFixed(1)}°</b>`;
+      at = o.clone();
+    } else {
+      // vector area of the polygon (works on any plane: floors, walls, sloped roofs)
+      const sum = new THREE.Vector3();
+      let perim = 0;
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i], q = pts[(i + 1) % pts.length];
+        sum.add(p.clone().cross(q));
+        perim += p.distanceTo(q);
+      }
+      const area = sum.length() / 2;
+      const fill = new THREE.Mesh(fanGeometry(pts),
+        new THREE.MeshBasicMaterial({ color: 0xe8590c, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthTest: false }));
+      fill.renderOrder = 9;
+      objs.push(fill);
+      label.innerHTML = `<b>${fmtArea(area)}</b><small>perimeter ${fmt(perim)}</small>`;
+      at = pts.reduce((s, p) => s.add(p), new THREE.Vector3()).multiplyScalar(1 / pts.length);
+    }
+    this.group.add(...objs);
     this.layer.appendChild(label);
-    this.items.push({ a, b, line, dots, label });
+    this.items.push({ kind, pts, objs, label, at });
   }
 
   relabel() {
     const items = this.items.splice(0);
-    for (const it of items) { this.group.remove(it.line, it.dots); it.label.remove(); this.add(it.a, it.b); }
+    for (const it of items) { this.group.remove(...it.objs); it.label.remove(); this.add(it.kind, it.pts); }
     this.v.requestRender();
   }
 
   placeLabels() {
     for (const it of this.items) {
-      const s = this.v.toScreen(it.a.clone().add(it.b).multiplyScalar(0.5));
+      const s = this.v.toScreen(it.at);
       it.label.style.display = s.behind ? 'none' : '';
       it.label.style.transform = `translate(${s.x}px, ${s.y}px) translate(-50%, -130%)`;
     }
   }
 
   undo() {
-    if (this.pending) { this.group.remove(this.pending.dot); this.pending = null; }
+    if (this.pending && this.pending.pts.length > 1) {
+      const pts = this.pending.pts.slice(0, -1);
+      this.drawPending(pts);
+    } else if (this.pending) this.cancelPending();
     else {
       const it = this.items.pop();
-      if (it) { this.group.remove(it.line, it.dots); it.label.remove(); }
+      if (it) { this.group.remove(...it.objs); it.label.remove(); }
     }
     this.v.requestRender();
     this.onChange?.();
   }
 
   clear() {
-    while (this.items.length || this.pending) this.undo();
+    this.cancelPending();
+    while (this.items.length) this.undo();
   }
+}
+
+// fan of triangles from the first corner (good for the convex and L-shaped rooms one measures)
+function fanGeometry(pts) {
+  const pos = [];
+  for (let i = 1; i < pts.length - 1; i++) pos.push(...pts[0].toArray(), ...pts[i].toArray(), ...pts[i + 1].toArray());
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  return g;
 }
 
 // ---- walk ------------------------------------------------------------------

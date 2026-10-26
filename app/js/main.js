@@ -917,10 +917,23 @@ $('#movebar').onclick = e => {
 };
 
 app.measure.onChange = () => {
-  $('#measureHint').textContent = app.measure.pending ? 'Now tap the second point' : `${app.measure.items.length} measured. Tap two more points.`;
+  const m = app.measure, n = m.pending ? m.pending.pts.length : 0;
+  const hints = {
+    dist: ['Tap two points. Corners snap.', 'Now tap the second point'],
+    angle: ['Tap a point on one side, then the corner', n === 1 ? 'Now tap the corner' : 'Now tap a point on the other side'],
+    area: ['Tap the corners of the area', n < 3 ? 'Keep tapping corners' : 'Tap the first corner again, or Finish'],
+  };
+  $('#measureHint').textContent = n ? hints[m.mode][1] : (m.items.length ? `${m.items.length} measured. ` : '') + hints[m.mode][0];
+  $$('#measureMode [data-mm]').forEach(b => b.classList.toggle('on', b.dataset.mm === m.mode));
+  $('#measurebar [data-ms=finish]').hidden = !(m.mode === 'area' && n >= 3);
+};
+$('#measureMode').onclick = e => {
+  const b = e.target.closest('[data-mm]');
+  if (b) app.measure.setMode(b.dataset.mm);
 };
 $('#measurebar').onclick = e => {
   const a = e.target.closest('[data-ms]')?.dataset.ms;
+  if (a === 'finish') app.measure.finish();
   if (a === 'undo') app.measure.undo();
   if (a === 'clear') app.measure.clear();
   if (a === 'unit') {

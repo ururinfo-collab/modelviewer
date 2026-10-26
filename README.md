@@ -82,7 +82,7 @@ Isolate, See-thru, Move.
 | Layers | Show / hide / isolate by **Tags** (SketchUp tags or COLLADA categories) or by **Categories** (walls, doors, windows, furniture, plumbing..., guessed from names; rules in `app/js/categories.js`) |
 | Tree | Model tree with search, eye toggles, zoom to |
 | Section | Plan cut (height slider), across, along, or parallel to a tapped face; flip; cut solids show red |
-| Measure | Tap two points, corners snap; shows length plus horizontal / vertical parts; units m, mm, ft-in |
+| Measure | **Distance** (two taps, corners snap; with horizontal / vertical parts), **Area** (tap the corners, then the first corner again or Finish; works on floors, walls and sloped roofs; shows perimeter too) and **Angle** (end, corner, end); units m, mm, ft-in |
 | Walk | Tap where to stand. Left thumb joystick walks, drag elsewhere looks. Follows floors and stairs, walls block (toggle). Fly mode for up / down. Keyboard: WASD, Q/E, Shift |
 | Build | Construction time-lapse, see below |
 | See-thru | Choose **Solid**, **See inside** (walls, roof, ceilings, floors, doors, windows, railings and boundary see-through; furniture, fittings, pipes, AC and stairs solid, so you look in from outside; taps go through the shell) or **X-ray** (everything see-through, selection solid). Calibrated on BuildLapse: 16 % opacity, faces tinted toward glass, faint grey edge lines. Also clears objects made see-through one by one. In See inside and X-ray nothing blocks you: zooming keeps flying forward through walls and furniture, and Walk passes through them (you still follow floors and stairs, never furniture) |

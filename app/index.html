@@ -108,7 +108,11 @@
 
   <div id="measurebar" class="bar glass" hidden>
     <div class="barname"><span id="measureHint">Tap two points. Corners snap.</span></div>
+    <div class="seg" id="measureMode" style="margin:2px 6px 4px">
+      <button data-mm="dist" class="on">Distance</button><button data-mm="area">Area</button><button data-mm="angle">Angle</button>
+    </div>
     <div class="baracts">
+      <button data-ms="finish" data-icon="target" hidden><span>Finish</span></button>
       <button data-ms="undo" data-icon="undo"><span>Undo</span></button>
       <button data-ms="clear" data-icon="trash"><span>Clear</span></button>
       <button data-ms="unit" data-icon="measure"><span id="unitLabel">m</span></button>
@@ -148,7 +152,7 @@
     <div id="wRecent" hidden><h3>On this phone</h3><ul id="recentList"></ul></div>
     <p class="help">Open a .skp straight from Files, Drive or WhatsApp. For the geo-location and hidden objects in scenes, use SketchUp › Extensions › Model Viewer › Export (.glb).</p>
     <p class="help" id="wDrop">On a computer you can also drop files here.</p>
-    <p class="help">Version 1.10.0</p>
+    <p class="help">Version 1.11.0</p>
   </div>
 </div>
 
