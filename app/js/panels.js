@@ -1,14 +1,15 @@
 // Side / bottom panels: layers (tags + categories), model tree, object info, section, sun, settings.
 import * as THREE from 'three';
-import { fmt, fmtVol, getUnit, setUnit, UNITS } from './units.js';
+import { fmt, fmtVol, fmtArea, getUnit, setUnit, UNITS } from './units.js';
 import { sunPosition, sunVectorSrc, localToUtc, SKETCHUP_DEFAULT, FALLBACK } from './sun.js';
 import { getSetting, setSetting, listRecent, deleteRecent } from './store.js';
 import { icon } from './icons.js';
 import { STYLES, BACKGROUNDS, GROUNDS } from './look.js';
+import { quantities, toCSV } from './quantities.js';
 
-export const APP_VERSION = '1.9.0';
+export const APP_VERSION = '1.10.0';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look' };
+const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look', qty: 'Quantities' };
 
 export class Panels {
   constructor(app) {
@@ -370,6 +371,40 @@ export class Panels {
       v.tickers.add(this.playing);
     }
     if (this.name === 'sun') this.render('sun');
+  }
+
+  // ---- quantities ----------------------------------------------------------------
+
+  qty() {
+    const v = this.v, by = this.qtyBy || 'tag', vis = this.qtyVisible ?? true;
+    const groups = quantities(v, by, vis);
+    this.qtyGroups = groups;
+    const label = { tag: 'Tag', cat: 'Category', name: 'Name' };
+    let h = `<div class="seg">${Object.entries(label).map(([k, n]) => `<button data-by="${k}" class="${by === k ? 'on' : ''}">By ${n.toLowerCase()}</button>`).join('')}</div>`;
+    h += `<label class="toggle">Only what is shown now<input type="checkbox" data-k="vis" ${vis ? 'checked' : ''}></label>`;
+    h += '<div class="btnrow"><button class="btn primary" data-act="csv">Export CSV (Excel)</button></div>';
+    const tot = groups.reduce((t, g) => ({ count: t.count + g.count, volume: t.volume + g.volume, area: t.area + g.area }), { count: 0, volume: 0, area: 0 });
+    h += `<p class="note">${tot.count} objects · ${fmtVol(tot.volume)} solid volume · ${fmtArea(tot.area)} surface. Volumes count closed solids only.</p>`;
+    h += groups.map((g, i) => `<div class="row qrow"><span class="nm">${esc(g.name)}<small>${g.count} pcs · ${g.volParts ? fmtVol(g.volume) : 'no solid volume'} · ${fmtArea(g.area)} · ${fmt(g.length)} long</small></span>` +
+      `<button class="ib" data-iso="${i}" data-icon="isolate" title="Show only these"></button></div>`).join('');
+    this.body.innerHTML = h;
+    this.body.onclick = e => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.by) { this.qtyBy = b.dataset.by; return this.render('qty'); }
+      if (b.dataset.act === 'csv') {
+        const csv = toCSV(groups, label[by]);
+        const name = `${(v.modelName || 'model').replace(/\.[^.]+$/, '')}_quantities_by_${label[by].toLowerCase()}.csv`;
+        return this.app.saveFile({ blob: new Blob([csv], { type: 'text/csv' }), name });
+      }
+      if (b.dataset.iso != null) {
+        const g = groups[+b.dataset.iso];
+        this.app.history.record(`Isolate ${g.name}`);
+        v.isolate(g.objects.map(o => o.E));
+        v.fitAll();
+      }
+    };
+    this.body.onchange = e => { if (e.target.dataset.k === 'vis') { this.qtyVisible = e.target.checked; this.render('qty'); } };
   }
 
   // ---- look: render style and lighting ------------------------------------------

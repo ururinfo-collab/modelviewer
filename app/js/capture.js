@@ -125,19 +125,21 @@ export function drawCaption(ctx, w, h, { title, line2, progress }) {
 
 // dialog with preview + Save / Share
 export function showSave(dlg, { blob, name }) {
-  const isVideo = blob.type.startsWith('video');
+  const isVideo = blob.type.startsWith('video'), isImage = blob.type.startsWith('image');
   const url = URL.createObjectURL(blob);
   const prev = dlg.querySelector('.preview');
-  prev.innerHTML = isVideo ? `<video src="${url}" controls playsinline muted loop autoplay></video>` : `<img src="${url}" alt="">`;
+  prev.innerHTML = isVideo ? `<video src="${url}" controls playsinline muted loop autoplay></video>`
+    : isImage ? `<img src="${url}" alt="">`
+    : '<p class="filecard">Spreadsheet file (CSV). Opens in Excel, Google Sheets or Numbers.</p>';
   dlg.querySelector('.fname').textContent = `${name} · ${(blob.size / 1048576).toFixed(1)} MB`;
   const file = new File([blob], name, { type: blob.type });
   const canShare = !!(navigator.canShare && navigator.canShare({ files: [file] }));
   const share = dlg.querySelector('[data-act=share]');
   const save = dlg.querySelector('[data-act=save]');
   share.hidden = !canShare;
-  share.textContent = IOS ? (isVideo ? 'Save Video / Share' : 'Save to Photos / Share') : 'Share';
-  save.textContent = IOS ? 'Save to Files' : 'Save to phone';
-  dlg.querySelector('.hint').textContent = IOS && !canShare && !isVideo ? 'Touch and hold the picture, then Save to Photos.' : '';
+  share.textContent = !isImage && !isVideo ? 'Share' : IOS ? (isVideo ? 'Save Video / Share' : 'Save to Photos / Share') : 'Share';
+  save.textContent = IOS ? 'Save to Files' : matchMedia('(hover: hover)').matches ? 'Download' : 'Save to phone';
+  dlg.querySelector('.hint').textContent = IOS && !canShare && isImage ? 'Touch and hold the picture, then Save to Photos.' : '';
   share.onclick = async () => {
     try { await navigator.share({ files: [file], title: name }); } catch (e) { if (e.name !== 'AbortError') alert(e.message); }
   };

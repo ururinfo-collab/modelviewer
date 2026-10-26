@@ -458,7 +458,7 @@ $('#tools').onclick = async e => {
   if (!b) return;
   const t = b.dataset.tool;
   if (!viewer.root && t !== 'settings') return toast('Open a model first');
-  if (['layers', 'tree', 'section', 'sun', 'settings', 'look'].includes(t)) {
+  if (['layers', 'tree', 'section', 'sun', 'settings', 'look', 'qty'].includes(t)) {
     if (app.tool === 'walk' || app.tool === 'measure' || app.tool === 'build') exitTools();
     return togglePanel(t);
   }
@@ -544,6 +544,7 @@ async function toggleRecord() {
 }
 $('#recStop').onclick = toggleRecord;
 app.toggleRecord = toggleRecord;
+app.saveFile = f => showSave($('#saveDlg'), f);
 
 // ---- build (construction time-lapse) bar --------------------------------------
 
