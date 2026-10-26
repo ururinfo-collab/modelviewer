@@ -462,7 +462,7 @@ function updateBuildBar() {
   $('#buildbar [data-bd=ghost]').classList.toggle('on', s.ghostRest);
   $('#buildbar [data-bd=orbit]').classList.toggle('on', s.orbit);
   $('#buildSpeed').textContent = `${s.duration} s`;
-  $('#buildOrder').textContent = s.data ? 'BuildLapse' : 'Auto order';
+  $('#buildOrder').textContent = s.data ? 'Order: BL' : 'Order: auto';
 }
 app.seq.onChange = updateBuildBar;
 
@@ -498,17 +498,41 @@ $('#buildbar').onclick = e => {
     s.onEnd = () => { s.onEnd = null; setTimeout(() => { if (app.recorder.active) toggleRecord(); }, 1500); };
     s.play();
   }
-  if (a === 'order') {
-    if (app.loaded.sequence) {
-      app.useOrderFile = !s.data;
-      s.stop();
-      s.data = app.useOrderFile ? app.loaded.sequence : null;
-      s.start();
-      toast(s.data ? 'BuildLapse order' : 'Automatic order (by object type, bottom up)');
-    } else $('#orderFile').click();
-  }
+  if (a === 'order') return showOrderMenu();
   if (a === 'done') exitTools();
   updateBuildBar();
+};
+
+// Order button: a small menu, so choosing the automatic order never opens a file picker
+function useOrder(file) {
+  const s = app.seq;
+  app.useOrderFile = !!file;
+  s.stop();
+  s.data = file ? app.loaded.sequence : null;
+  s.start();
+  updateBuildBar();
+  toast(file ? `BuildLapse order: ${s.stages.length} stages` : `Automatic order from tags: ${s.stages.length} stages`);
+}
+
+function showOrderMenu() {
+  const menu = $('#orderMenu'), s = app.seq, seq = app.loaded.sequence;
+  const item = (act, label, on, note = '') =>
+    `<button data-om="${act}" class="${on ? 'on' : ''}"><b>${on ? '✓ ' : ''}${label}</b>${note ? `<small>${note}</small>` : ''}</button>`;
+  menu.innerHTML = '<div class="omtitle">Build order</div>' +
+    item('auto', 'Automatic', !s.data, 'From the tags (S-FDN, A-WALL, P-WATER...), bottom up') +
+    (seq ? item('file', 'BuildLapse order', !!s.data, `${seq.stages.length} stages${seq.model ? `, from ${esc(seq.model)}` : ''}`) : '') +
+    item('load', 'Load an order file...', false, '.sequence.json made by BuildLapse') +
+    item('close', 'Cancel', false);
+  menu.hidden = false;
+}
+
+$('#orderMenu').onclick = e => {
+  const a = e.target.closest('[data-om]')?.dataset.om;
+  if (!a) return;
+  $('#orderMenu').hidden = true;
+  if (a === 'auto' && app.seq.data) useOrder(false);
+  if (a === 'file' && !app.seq.data) useOrder(true);
+  if (a === 'load') $('#orderFile').click();
 };
 
 $('#orderFile').onchange = async e => {
@@ -536,6 +560,7 @@ function updateBars() {
   $('#movebar').hidden = t !== 'move';
   $('#measurebar').hidden = t !== 'measure';
   $('#buildbar').hidden = t !== 'build';
+  if (t !== 'build') $('#orderMenu').hidden = true;
   if (E) $('#selName').textContent = E.name;
   if (E) {
     $('#selUp').style.visibility = E.parent && E.parent !== viewer.rootEnt && E.parent !== viewer.top ? 'visible' : 'hidden';
