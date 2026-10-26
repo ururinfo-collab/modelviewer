@@ -108,6 +108,7 @@
   <div id="orderMenu" class="menu glass" hidden></div>
 
   <div id="viewMenu" class="menu glass" hidden></div>
+  <div id="arMenu" class="menu glass" hidden></div>
 
   <div id="measurebar" class="bar glass" hidden>
     <div class="barname"><span id="measureHint">Tap two points. Corners snap.</span></div>
@@ -138,14 +139,7 @@
 
 <div id="arUI" hidden>
   <div id="arHint" class="glass"></div>
-  <div class="arbar glass">
-    <div class="seg" id="arScale"></div>
-    <div class="baracts">
-      <button data-ar="left" data-icon="rotate"><span>Turn left</span></button>
-      <button data-ar="right" data-icon="redo"><span>Turn right</span></button>
-      <button data-ar="exit" data-icon="close"><span>Exit AR</span></button>
-    </div>
-  </div>
+  <div class="arbar glass" id="arBar"></div>
 </div>
 
 <div id="hoverTip" hidden></div>
@@ -167,7 +161,7 @@
     <div id="wRecent" hidden><h3>On this phone</h3><ul id="recentList"></ul></div>
     <p class="help">Open a .skp straight from Files, Drive or WhatsApp. For the geo-location and hidden objects in scenes, use SketchUp › Extensions › Model Viewer › Export (.glb).</p>
     <p class="help" id="wDrop">On a computer you can also drop files here.</p>
-    <p class="help">Version 1.15.0</p>
+    <p class="help">Version 1.16.0</p>
   </div>
 </div>
 

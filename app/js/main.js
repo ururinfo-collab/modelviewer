@@ -14,7 +14,7 @@ import { screenshot, Recorder, showSave } from './capture.js';
 import { saveRecent, listRecent, getRecent, deleteRecent, getSetting, setSetting } from './store.js';
 import { Panels, esc } from './panels.js';
 import { icon } from './icons.js';
-import { getUnit, setUnit } from './units.js';
+import { fmt, getUnit, setUnit } from './units.js';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -730,37 +730,86 @@ $('#orderMenu').onclick = e => {
 app.ar = new AR(app, $('#arUI'));
 arSupported().then(ok => { $('#tools [data-tool=ar]').hidden = !ok; });
 
-function buildARScale() {
-  $('#arScale').innerHTML = Object.entries(SCALES).map(([k, n]) =>
-    `<button data-scale="${k}" class="${+k === app.ar.scale ? 'on' : ''}">${n}</button>`).join('');
-}
-
-async function startAR() {
+// first a choice: a table model, or full size standing at a spot you pick in the model
+function startAR() {
   exitTools();
   app.panels.close();
   viewer.select(null);
-  buildARScale();
+  const item = (act, label, note) => `<button data-arm="${act}"><b>${label}</b><small>${note}</small></button>`;
+  $('#arMenu').innerHTML = '<div class="omtitle">AR</div>' +
+    item('table', 'Table model', 'The house on a table or the floor, 1:200 to 1:10') +
+    item('full', 'Full size: stand inside', 'First tap the floor in the model where you want to stand') +
+    item('close', 'Cancel', '');
+  $('#arMenu').hidden = false;
+}
+
+$('#arMenu').onclick = e => {
+  const a = e.target.closest('[data-arm]')?.dataset.arm;
+  if (!a) return;
+  $('#arMenu').hidden = true;
+  if (a === 'table') runAR('table');
+  if (a === 'full') { setTool('arStand'); toast('Tap the floor in the model where you want to stand. Face the way you want to look.', 4500); }
+};
+
+// the spot picked in the model, and the direction you were looking at it from
+function standFrom(h) {
+  const d = viewer.camera.getWorldDirection(new THREE.Vector3());
+  return { point: h.point.clone(), yaw: Math.atan2(-d.x, -d.z) };
+}
+app.standFrom = standFrom;
+
+function buildARBar() {
+  const A = app.ar, b = (act, icon, label) => `<button data-ar="${act}" data-icon="${icon}"><span>${label}</span></button>`;
+  let h;
+  if (A.mode === 'full') {
+    h = '<div class="barname"><span id="arEye">Eye level</span></div>' +
+      `<div class="baracts">${b('up', 'up', 'Model up')}${b('down', 'down', 'Model down')}${b('fwd', 'up', 'Forward')}${b('back', 'down', 'Back')}</div>` +
+      `<div class="baracts">${b('sl', 'prev', 'Left')}${b('sr', 'next', 'Right')}${b('left', 'rotate', 'Turn')}${b('right', 'redo', 'Turn')}${b('here', 'target', 'At my feet')}${b('exit', 'close', 'Exit')}</div>`;
+  } else {
+    h = `<div class="seg">${Object.entries(SCALES).map(([k, n]) => `<button data-scale="${k}" class="${+k === A.scale ? 'on' : ''}">${n}</button>`).join('')}</div>` +
+      `<div class="baracts">${b('zin', 'plus', 'Bigger')}${b('zout', 'down', 'Smaller')}${b('left', 'rotate', 'Turn')}${b('right', 'redo', 'Turn')}${b('exit', 'close', 'Exit AR')}</div>`;
+  }
+  $('#arBar').innerHTML = h;
+  fillIcons($('#arBar'));
+}
+
+async function runAR(mode, stand = null) {
+  app.ar.mode = mode;
+  buildARBar();
   $('#arHint').textContent = 'Starting the camera...';
   $('#arUI').hidden = false;
   try {
-    await app.ar.start();
+    await app.ar.start(mode, stand);
   } catch (e) {
     $('#arUI').hidden = true;
     alert(`AR could not start: ${e.message}\n\nAR needs Chrome on Android with "Google Play Services for AR" installed (Play Store), and the app opened from its https address.`);
   }
 }
+app.runAR = runAR;
 
 app.ar.onStatus = msg => { $('#arHint').textContent = msg || ''; };
+app.ar.onEye = h => { const el = $('#arEye'); if (el) el.textContent = `Your eye level: ${fmt(h)} above the floor you stand on`; };
 app.ar.onEnd = () => { $('#arUI').hidden = true; };
 // taps on the AR buttons must not also place the model
-$('#arUI .arbar').addEventListener('beforexrselect', e => e.preventDefault());
+$('#arBar').addEventListener('beforexrselect', e => e.preventDefault());
 $('#arUI').onclick = e => {
+  const A = app.ar;
   const s = e.target.closest('[data-scale]');
-  if (s) { app.ar.setScale(s.dataset.scale); buildARScale(); return; }
+  if (s) { A.setScale(s.dataset.scale); return buildARBar(); }
   const a = e.target.closest('[data-ar]')?.dataset.ar;
-  if (a === 'left') app.ar.turn(15);
-  if (a === 'right') app.ar.turn(-15);
-  if (a === 'exit') app.ar.stop();
+  if (a === 'left') A.turn(15);
+  if (a === 'right') A.turn(-15);
+  if (a === 'zin') A.zoom(1.25);
+  if (a === 'zout') A.zoom(0.8);
+  if (a === 'up') A.raise(0.1);
+  if (a === 'down') A.raise(-0.1);
+  if (a === 'fwd') A.slide(0.25, 0);
+  if (a === 'back') A.slide(-0.25, 0);
+  if (a === 'sl') A.slide(0, -0.25);
+  if (a === 'sr') A.slide(0, 0.25);
+  if (a === 'here') A.place();
+  if (a === 'exit') A.stop();
+  if (a === 'zin' || a === 'zout') buildARBar();
 };
 
 // ---- notes: tap a spot, write, optional photo ------------------------------------
@@ -859,7 +908,7 @@ function updateBars() {
   $('#movebar').hidden = t !== 'move';
   $('#measurebar').hidden = t !== 'measure';
   $('#buildbar').hidden = t !== 'build';
-  if (t) $('#viewMenu').hidden = true;
+  if (t) { $('#viewMenu').hidden = true; $('#arMenu').hidden = true; }
   if (t !== 'build') $('#orderMenu').hidden = true;
   if (E) $('#selName').textContent = E.name;
   if (E) {
@@ -1166,6 +1215,13 @@ function onTap(x, y) {
   }
   if (t === 'measure') return app.measure.onTap(x, y);
   if (t === 'build') return;           // the build plays; nothing to pick
+  if (t === 'arStand') {        // full-size AR: where you will stand
+    const h = viewer.pickFloor(x, y);
+    if (!h) return;
+    setTool(null);
+    runAR('full', standFrom(h));
+    return;
+  }
   if (t === 'note') {
     const h = viewer.pick(x, y);
     if (!h) return;
