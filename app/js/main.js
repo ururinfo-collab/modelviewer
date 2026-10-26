@@ -452,7 +452,7 @@ function updateBuildBar() {
   const st = s.stages[s.stageIndex] || {};
   $('#buildStage').textContent = `${s.pos > 0 ? s.stageIndex + 1 : 0}/${s.stages.length} · ${s.pos > 0 ? st.en : 'Empty site'}`;
   $('#buildMM').textContent = s.pos > 0 ? st.mm || '' : '';
-  if (document.activeElement !== $('#buildRange')) $('#buildRange').value = Math.round(s.time * 1000);
+  if (!rangeHeld) $('#buildRange').value = Math.round(s.time * 1000);
   const play = $('#buildbar [data-bd=play]');
   if (play.dataset.icon !== (s.playing ? 'pause' : 'play')) {
     play.dataset.icon = s.playing ? 'pause' : 'play';
@@ -466,9 +466,15 @@ function updateBuildBar() {
 }
 app.seq.onChange = updateBuildBar;
 
+// while a finger is on the slider the bar must not move it back
+let rangeHeld = false;
+$('#buildRange').addEventListener('pointerdown', () => { rangeHeld = true; });
+['pointerup', 'pointercancel', 'change'].forEach(t => $('#buildRange').addEventListener(t, () => { rangeHeld = false; }));
 $('#buildRange').oninput = e => {
+  const t = e.target.value / 1000;     // read first: pausing refreshes the bar
+  rangeHeld = true;
   app.seq.pause();
-  app.seq.setTime(e.target.value / 1000, false);
+  app.seq.setTime(t, false);
 };
 
 $('#buildbar').onclick = e => {
@@ -686,6 +692,7 @@ function onTap(x, y) {
     return;
   }
   if (t === 'measure') return app.measure.onTap(x, y);
+  if (t === 'build') return;           // the build plays; nothing to pick
   if (t === 'sectionPick') {
     const h = viewer.pick(x, y);
     if (h) { app.section.set('face', h); setTool(null); if (app.panels.name === 'section') app.panels.render('section'); }
@@ -726,21 +733,25 @@ addEventListener('keydown', e => {
 // ---- keep the model centred in the free part of the screen -------------------
 
 function updateInset() {
-  const w = innerWidth, h = innerHeight, panel = $('#panel');
-  const open = !panel.hidden;
+  const w = innerWidth, h = innerHeight;
+  // the panel and the tool bars take screen room; the small selection bar does not count, so
+  // selecting does not shift the view
+  const blocks = ['#panel', '#buildbar', '#measurebar', '#movebar'].map(s => $(s)).filter(el => !el.hidden);
   if (document.body.classList.contains('walking')) viewer.setInset(0, 0);
   else if (matchMedia('(orientation: landscape)').matches) {
     const left = $('#tools').getBoundingClientRect().right;
-    const right = open ? w - panel.getBoundingClientRect().left + 8 : 0;
+    const right = blocks.length ? w - Math.min(...blocks.map(el => el.getBoundingClientRect().left)) + 8 : 0;
     viewer.setInset(Math.round((right - left) / 2), 0);
   } else {
     const top = $('#scenes').getBoundingClientRect().bottom;
-    const bottom = h - (open ? panel.getBoundingClientRect().top : $('#tools').getBoundingClientRect().top);
+    const bottom = h - (blocks.length ? Math.min(...blocks.map(el => el.getBoundingClientRect().top)) : $('#tools').getBoundingClientRect().top);
     viewer.setInset(0, Math.round((bottom - top) / 2));
   }
 }
 new ResizeObserver(updateInset).observe($('#dock'));
-new MutationObserver(updateInset).observe($('#panel'), { attributes: true, attributeFilter: ['hidden'] });
+for (const s of ['#panel', '#buildbar', '#measurebar', '#movebar']) {
+  new MutationObserver(updateInset).observe($(s), { attributes: true, attributeFilter: ['hidden'] });
+}
 addEventListener('resize', updateInset);
 document.body.addEventListener('transitionend', updateInset);
 
@@ -751,8 +762,22 @@ if ('serviceWorker' in navigator && isSecureContext && !local) {
   navigator.serviceWorker.register('sw.js').catch(err => console.warn('No offline mode:', err));
   // a new version took over: reload once so it is in use now, not on the next launch
   if (navigator.serviceWorker.controller) {
-    navigator.serviceWorker.addEventListener('controllerchange', () => { if (!viewer.root) location.reload(); else toast('App updated. Reopen it to use the new version.', 5000); });
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      const idle = !viewer.root && $('#busy').hidden && !location.search;   // never while a model is opening
+      if (idle) location.reload(); else toast('App updated. Reopen it to use the new version.', 5000);
+    });
   }
+}
+
+// "Open with Viewer" from a file manager (installed app, where the browser supports file handling)
+let launched = false;
+if ('launchQueue' in window) {
+  window.launchQueue.setConsumer(async params => {
+    if (!params.files?.length) return;
+    launched = true;
+    const files = await Promise.all(params.files.map(async h => { const f = await h.getFile(); return { name: f.name, blob: f }; }));
+    openFiles(files);
+  });
 }
 
 (async () => {
@@ -763,5 +788,5 @@ if ('serviceWorker' in navigator && isSecureContext && !local) {
     if (files.length) return openFiles(files);
   }
   if (q.get('model')) return openUrl(q.get('model'));
-  showWelcome();
+  if (!launched) showWelcome();
 })();

@@ -47,7 +47,10 @@ After moving this folder, run `python sketchup/build.py` and reinstall (the .rbz
   the Wi-Fi address and tap the model under "From the PC". Each export overwrites `exports/<model>.glb`, so after
   a change: Export, then tap it again on the phone. "Selection only" exports just what is selected.
 - **Any file route:** send the `.skp`, `.glb` or `.dae` by WhatsApp, Drive, email, USB or AirDrop, save it, then in the app
-  tap Open a model file. On Android, after installing the app, you can also Share a file straight to "Viewer".
+  tap Open a model file.
+  - Android (Samsung): install the app from **Chrome** (not Samsung Internet), then in WhatsApp / My Files
+    long-press the file › Share › **Viewer**. Recent Chrome versions also list Viewer under "Open with".
+  - iPhone: always through Open a model file; iOS does not let web apps appear in "Open with".
 - The last 6 models stay on the phone (welcome screen, "On this phone") and open offline.
 
 ## Using it
@@ -95,8 +98,12 @@ Build bar: Play / Pause, slider, previous / next stage, Show rest (unbuilt parts
 during the build), speed (20 to 120 s), Record (plays from the start and saves a video with the stage caption in
 English and Myanmar and a progress bar), Order.
 
-- **Automatic order** works on any model: foundations, columns, beams, slabs, walls, stairs, roof, doors, windows,
-  services, finishes, railings, furniture, site; bottom up within each stage, every stage the same time.
+- **Automatic order** works on any model. Each part's stage comes from its **tag** (CAD codes such as S-FDN, S-COL,
+  A-WALL, A-OPEN, P-WATER, M-ACMV, E-ELEC, I-FURN, or words like "foundation", "roof"), from its name only when the
+  tag says nothing. Stages: excavation and foundations, underground services (services that stay below ground),
+  columns, beams, slabs, staircase, roof structure, roofing, walls, doors and windows, plumbing, air-conditioning,
+  electrical, finishes, railings, interior, solar, boundary, site. Bottom up within each stage, every stage the same
+  time. Context tags (X-CTX, "indicative") stay in view throughout.
 - **BuildLapse order** (the 28-stage Rev05 site sequence with BuildLapse's timing): make it from a BuildLapse job
   ```bash
   python tools/sequence_from_buildlapse.py "C:/Users/ARKAR/Desktop/BuildLapse/jobs/dho2_0_rev05"

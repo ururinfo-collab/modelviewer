@@ -13,6 +13,16 @@
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
     { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
+  "file_handlers": [
+    { "action": "./", "accept": {
+      "application/octet-stream": [".skp", ".glb", ".gltf", ".dae"],
+      "application/vnd.sketchup.skp": [".skp"],
+      "model/gltf-binary": [".glb"],
+      "model/gltf+json": [".gltf"],
+      "model/vnd.collada+xml": [".dae"]
+    } }
+  ],
+  "launch_handler": { "client_mode": "focus-existing" },
   "share_target": {
     "action": "./share-target",
     "method": "POST",

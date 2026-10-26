@@ -1,13 +1,76 @@
 // Construction time-lapse: parts appear stage by stage, newest ones flash orange.
 // Order comes from a BuildLapse sequence sidecar (<model>.sequence.json) when there is one,
-// else from the object categories (foundations first, furniture last), bottom up within each.
+// else automatic: each part's stage from its tag (S-FDN, A-WALL, P-WATER...), from its name when
+// the tag says nothing; bottom up within each stage.
 import * as THREE from 'three';
-import { OTHER } from './categories.js';
 
-const AUTO = ['Foundations', 'Columns', 'Beams', 'Slabs', 'Walls', 'Stairs', 'Roof', 'Doors', 'Windows',
-  'Plumbing', 'Electrical', 'HVAC', 'Sanitary', 'Finishes', 'Railings', 'Furniture', 'Site', OTHER];
-const MM = { Foundations: 'အုတ်မြစ်', Columns: 'တိုင်များ', Beams: 'ဘီမ်များ', Slabs: 'ကြမ်းခင်း', Walls: 'နံရံများ',
-  Stairs: 'လှေကား', Roof: 'အမိုး', Doors: 'တံခါးများ', Windows: 'ပြတင်းပေါက်များ', Furniture: 'ပရိဘောဂ' };
+// automatic stages in site order (captions as in BuildLapse)
+const STAGES = [
+  ['fdn', 'Excavation and foundations', 'မြေတူးခြင်းနှင့် ဖောင်ဒေးရှင်း'],
+  ['ug', 'Underground services: tanks, drains and pipes', 'မြေအောက် လုပ်ငန်းများ - ရေကန်၊ မိလ္လာကန်နှင့် ပိုက်များ'],
+  ['col', 'Columns', 'တိုင်များ'],
+  ['beam', 'Beams', 'ဘီမ်များ'],
+  ['slab', 'Slabs', 'ကွန်ကရစ်ကြမ်းခင်း'],
+  ['stair', 'Staircase', 'လှေကား'],
+  ['steel', 'Roof structure', 'ခေါင်မိုး သံမူဘောင်များ'],
+  ['roof', 'Roofing', 'ခေါင်မိုးမိုးခြင်း'],
+  ['wall', 'Brickwork and walls', 'အုတ်စီခြင်း'],
+  ['open', 'Doors and windows', 'တံခါးနှင့် ပြတင်းပေါက်များ'],
+  ['plumb', 'Plumbing and drainage', 'ရေပိုက်နှင့် မိလ္လာပိုက်များ'],
+  ['mech', 'Air-conditioning', 'လေအေးပေးစက်'],
+  ['elec', 'Electrical', 'လျှပ်စစ်'],
+  ['fin', 'Finishes: floors, tiles, ceilings', 'ကြမ်းခင်း၊ နံရံ ကြွေပြားနှင့် မျက်နှာကျက်များ'],
+  ['rail', 'Railings', 'လက်ရန်းများ'],
+  ['int', 'Interior: kitchen, sanitary ware and furniture', 'မီးဖိုချောင်၊ ရေချိုးခန်းပစ္စည်းနှင့် ပရိဘောဂများ'],
+  ['solar', 'Solar panels', 'ဆိုလာပြားများ'],
+  ['bound', 'Boundary wall and gate', 'ခြံစည်းရိုးနှင့် ခြံတံခါး'],
+  ['site', 'Paving and site works', 'ခြံဝင်း ကြမ်းခင်းနှင့် အပြီးသတ်လုပ်ငန်း'],
+  ['other', 'Other parts', ''],
+];
+// CAD-style tag codes: discipline letter + element code (A-WALL, S-COL, P-WATER, E-ELEC...)
+const DISCIPLINE = { P: 'plumb', F: 'plumb', M: 'mech', E: 'elec', I: 'int', X: 'ctx' };
+const CODE = {
+  FDN: 'fdn', FOUND: 'fdn', FTG: 'fdn', PILE: 'fdn', EXC: 'fdn', COL: 'col', BEAM: 'beam', BM: 'beam', SLAB: 'slab',
+  STAIR: 'stair', STEEL: 'steel', TRUSS: 'steel', FRAME: 'steel', ROOF: 'roof', WALL: 'wall', MASN: 'wall', BRICK: 'wall',
+  OPEN: 'open', DOOR: 'open', WIN: 'open', GLAZ: 'open', CEIL: 'fin', FLOOR: 'fin', FLOR: 'fin', FIN: 'fin', TILE: 'fin',
+  RAIL: 'rail', BOUND: 'bound', FENCE: 'bound', SITE: 'site', LAND: 'site', PAVE: 'site', CTX: 'ctx',
+};
+// tags without a code: words, most specific first
+const TAG_WORDS = [
+  ['ctx', /context|indicative|neighbo/i], ['plumb', /plumb|water|waste|soil|drain|sewer|rain|septic/i],
+  ['mech', /hvac|air.?con|mechanical|acmv/i], ['elec', /electric|power|lighting/i], ['solar', /solar|\bpv\b/i],
+  ['int', /interior|furniture|kitchen|sanitary|joinery/i], ['bound', /boundary|fence|gate/i],
+  ['fdn', /foundation|footing|excavat|pile/i], ['stair', /stair/i], ['col', /column/i], ['beam', /beam/i],
+  ['slab', /slab/i], ['steel', /truss|purlin|steel/i], ['roof', /roof/i], ['rail', /rail|balustr/i],
+  ['open', /door|window|opening|glaz/i], ['fin', /ceiling|finish|tile|floor/i], ['wall', /wall|brick|masonry|partition/i],
+  ['site', /site|paving|landscape|garden|terrain/i],
+];
+// untagged parts: the category guessed from the name
+const FROM_CATEGORY = {
+  Foundations: 'fdn', Columns: 'col', Beams: 'beam', Slabs: 'slab', Walls: 'wall', Stairs: 'stair', Roof: 'roof',
+  Doors: 'open', Windows: 'open', Plumbing: 'plumb', Sanitary: 'int', HVAC: 'mech', Electrical: 'elec', Solar: 'solar',
+  Finishes: 'fin', Railings: 'rail', Furniture: 'int', Site: 'site',
+};
+
+function stageFromTag(tag) {
+  const t = String(tag || '').trim();
+  if (!t || /^(untagged|layer0)$/i.test(t)) return null;
+  const m = /^([A-Z])-([A-Z]+)/i.exec(t);
+  if (m) {
+    const d = DISCIPLINE[m[1].toUpperCase()];
+    if (d) return d;
+    const c = CODE[m[2].toUpperCase()];
+    if (c) return c;
+  }
+  for (const [k, re] of TAG_WORDS) if (re.test(t)) return k;
+  return null;
+}
+
+export function autoStage(E) {
+  if (/\bpv\b|solar panel|solar module/i.test(E.name)) return 'solar';
+  return stageFromTag(E.tag) ?? FROM_CATEGORY[E.cat] ?? 'other';
+}
+
 const FLASH = 0.6;   // seconds a new part stays orange
 
 export class Sequence {
@@ -34,10 +97,11 @@ export class Sequence {
     const info = E => {
       box.makeEmpty();
       for (const m of E.meshes) box.expandByObject(m);
-      return { bottom: box.min.y, center: box.getCenter(c).clone() };
+      return { bottom: box.min.y, top: box.max.y, center: box.getCenter(c).clone() };
     };
     let keyed = [];
     this.unmatched = 0;
+    this.stageT = null;
     if (this.data) {
       this.stages = this.data.stages.map(s => ({ en: s.en, mm: s.mm || '' }));
       const byName = new Map();
@@ -82,20 +146,29 @@ export class Sequence {
           const st = byTag(E.tag) ?? byCat(E.cat);
           if (st == null) continue;
           const { bottom } = info(E);
-          keyed.push({ E, stage: st, key: 1e12 + bottom, bottom });     // at the end of its stage, bottom up
+          keyed.push({ E, stage: st, key: 1e12 + bottom, bottom, extra: true });   // end of its stage, bottom up
           this.unmatched = (this.unmatched || 0) + 1;
         }
       }
       this.matched = leaves.length - missing.length;
     } else {
-      const present = AUTO.filter(c => v.categories.has(c));
-      this.stages = present.map(c => ({ en: c, mm: MM[c] || '' }));
+      const byStage = new Map();
       for (const E of leaves) {
-        if (/context|indicative/i.test(`${E.tag} ${E.name}`)) continue;     // neighbours stay in view
-        const { bottom, center } = info(E);
-        keyed.push({ E, stage: present.indexOf(E.cat), key: bottom * 100 + center.x * 0.01, bottom });
+        let st = autoStage(E);
+        if (st === 'ctx' || /context|indicative/i.test(`${E.tag} ${E.name}`)) continue;   // neighbours stay in view
+        // services that stay below ground level (y = 0) go in before the ground slab
+        if ((st === 'plumb' || st === 'elec' || st === 'mech') && info(E).top < 0.05) st = 'ug';
+        if (!byStage.has(st)) byStage.set(st, []);
+        byStage.get(st).push(E);
       }
-      keyed = keyed.filter(k => k.stage >= 0);
+      const present = STAGES.filter(([k]) => byStage.has(k));
+      this.stages = present.map(([, en, mm]) => ({ en, mm }));
+      present.forEach(([k], i) => {
+        for (const E of byStage.get(k)) {
+          const { bottom, center } = info(E);
+          keyed.push({ E, stage: i, key: bottom * 100 + center.x * 0.01, bottom });
+        }
+      });
       this.matched = keyed.length;
       this.unmatched = 0;
     }
@@ -105,13 +178,13 @@ export class Sequence {
     const N = this.stages.length;
     const count = this.stages.map(() => 0), seen = this.stages.map(() => 0);
     for (const k of keyed) count[k.stage]++;
-    const real = keyed.filter(k => k.key < 1e12);
-    const k0 = this.data && real.length ? Math.min(...real.map(k => k.key)) : 0;
-    const k1 = this.data && real.length ? Math.max(...real.map(k => k.key)) : 1;
+    const real = keyed.filter(k => !k.extra);
+    let k0 = Infinity, k1 = -Infinity;
+    for (const k of real) { k0 = Math.min(k0, k.key); k1 = Math.max(k1, k.key); }
     const stageEnd = this.stages.map(() => 0);
     for (const k of keyed) {
       seen[k.stage]++;
-      if (this.data && k.key < 1e12) k.t = (k.key - k0) / Math.max(1, k1 - k0);
+      if (this.data && !k.extra) k.t = (k.key - k0) / Math.max(1, k1 - k0);
       else if (!this.data) k.t = (k.stage + seen[k.stage] / count[k.stage]) / N;
       if (k.t != null) stageEnd[k.stage] = Math.max(stageEnd[k.stage], k.t);
     }
@@ -223,19 +296,33 @@ export class Sequence {
     this.v.updateVisibility(true);
   }
 
-  // current stage (the one the last built part belongs to)
+  // current stage: the latest one whose first part has been built (a stray early part of a later
+  // stage does not move the caption)
   get stageIndex() {
-    const i = Math.min(this.steps.length - 1, Math.max(0, Math.floor(this.pos) - 1));
-    return this.steps.length ? this.steps[i].stage : 0;
+    if (!this.stageT) {
+      // a stage starts when a tenth of its parts are in
+      this.stageT = this.stages.map((_, i) => {
+        const ts = this.steps.filter(k => k.stage === i).map(k => k.t).sort((a, b) => a - b);
+        return ts.length ? ts[Math.floor(ts.length * 0.1)] : Infinity;
+      });
+    }
+    const t = this.pos > 0 ? Math.max(this.time, this.steps[Math.max(0, Math.floor(this.pos) - 1)].t) : 0;
+    let best = 0;
+    this.stageT.forEach((s, i) => { if (s <= t && s >= this.stageT[best]) best = i; });
+    return best;
   }
 
   jumpStage(d) {
-    const s = THREE.MathUtils.clamp(this.stageIndex + d, 0, this.stages.length - 1);
-    // build up to the end of stage s
-    let c = 0;
-    this.steps.forEach((k, i) => { if (k.stage <= s) c = i + 1; });
-    this.time = c >= this.steps.length ? 1 : this.steps[c].t - 1e-9;
+    const si = this.stageIndex;                               // also fills this.stageT
+    const cur = this.pos > 0 ? si : -1;                       // empty site: before stage 1
+    if (cur + d < 0) { this.time = 0; this.unflash(true); return this.setPos(0, false); }
+    // stages in the order they start; go to the end of the chosen one (just before the next starts)
+    const order = this.stages.map((_, i) => i).filter(i => this.stageT[i] < Infinity)
+      .sort((a, b) => this.stageT[a] - this.stageT[b]);
+    const at = cur < 0 ? -1 : order.indexOf(cur);
+    const k = THREE.MathUtils.clamp(at + d, 0, order.length - 1);
+    const next = order[k + 1];
     this.unflash(true);
-    this.setPos(c, false);
+    this.setTime(next === undefined ? 1 : this.stageT[next] - 1e-6, false);
   }
 }

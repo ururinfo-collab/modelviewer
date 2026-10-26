@@ -44,7 +44,14 @@ export class Recorder {
     out.height = gl.height & ~1;
     const ctx = out.getContext('2d');
     this.draw = () => {
-      ctx.drawImage(gl, 0, 0);
+      // the phone may turn while recording: fit the frame instead of cropping it
+      if (gl.width !== out.width || gl.height !== out.height) {
+        ctx.fillStyle = '#eef0f2';
+        ctx.fillRect(0, 0, out.width, out.height);
+        const k = Math.min(out.width / gl.width, out.height / gl.height);
+        const w = gl.width * k, h = gl.height * k;
+        ctx.drawImage(gl, (out.width - w) / 2, (out.height - h) / 2, w, h);
+      } else ctx.drawImage(gl, 0, 0);
       const o = overlay?.();
       if (o) drawCaption(ctx, out.width, out.height, o);
     };
@@ -94,7 +101,8 @@ export function drawCaption(ctx, w, h, { title, line2, progress }) {
   if (title || line2) {
     ctx.fillStyle = 'rgba(255,255,255,0.88)';
     ctx.beginPath();
-    ctx.roundRect(x, y, bw, bh, 8 * s);
+    if (ctx.roundRect) ctx.roundRect(x, y, bw, bh, 8 * s);   // older phones lack roundRect
+    else ctx.rect(x, y, bw, bh);
     ctx.fill();
     ctx.fillStyle = '#1f262d';
     ctx.textBaseline = 'middle';

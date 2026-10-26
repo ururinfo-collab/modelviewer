@@ -1,6 +1,6 @@
 // Offline cache for the app itself (models are kept in IndexedDB by the page),
 // and Android's share target: files shared to the installed app are parked for the page to pick up.
-const VERSION = 'mv-1.1.1';   // bump after changing any app file, so phones fetch the new copy
+const VERSION = 'mv-1.2.0';   // bump after changing any app file, so phones fetch the new copy
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/main.js', 'js/viewer.js', 'js/loaders.js', 'js/tools.js', 'js/transform.js', 'js/capture.js',
@@ -41,7 +41,8 @@ self.addEventListener('fetch', e => {
   // app files: the newest copy when online (so updates show at once), the saved copy when offline
   e.respondWith(caches.open(VERSION).then(async cache => {
     try {
-      const res = await fetch(e.request, { cache: 'no-cache' });
+      // by URL: a page-open (navigate) request cannot be copied with new options
+      const res = await fetch(e.request.url, { cache: 'no-cache', credentials: 'same-origin' });
       if (res.ok) cache.put(e.request, res.clone());
       return res;
     } catch {
