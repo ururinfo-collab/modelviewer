@@ -96,6 +96,13 @@ async function loadSkp(main, manager) {
     node.extras = { mv };
   });
   json.scenes[json.scene || 0].extras = { mv: meta };
+  // openskp writes SketchUp's colours (sRGB) straight into baseColorFactor, which glTF reads as linear:
+  // every colour came out lighter and greyer than in SketchUp. Convert them as the SketchUp export does.
+  const lin = c => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  for (const m of json.materials || []) {
+    const f = m.pbrMetallicRoughness?.baseColorFactor;
+    if (Array.isArray(f)) for (let i = 0; i < 3; i++) f[i] = lin(f[i]);
+  }
   const loaded = await loadGltf(main, writeGlbJson(glb, json), manager, INCH_ZUP_TO_M_YUP);
   loaded.kind = 'skp';
   return loaded;

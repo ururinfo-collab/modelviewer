@@ -22,7 +22,14 @@ export const STYLES = {
     edges: null, light: { hemi: 0.45, sun: 2.6 }, env: 0.85, tone: true, bg: 'sky', ground: 'grass', ao: true, shadows: true,
   },
 };
-export const BACKGROUNDS = { light: 'Light grey', white: 'White', sky: 'Sky', dark: 'Dark' };
+// colour strength on top of any style: saturation of the model colours, and the balance between the even sky
+// light (flat) and the sun (light and shade, so faces stand apart)
+export const COLOURS = {
+  soft: { label: 'Soft', sat: 0.85, hemi: 1.1, sun: 0.8 },
+  natural: { label: 'Natural', sat: 1, hemi: 1, sun: 1 },
+  vivid: { label: 'Vivid', sat: 1.35, hemi: 0.6, sun: 1.5 },
+};
+export const BACKGROUNDS ={ light: 'Light grey', white: 'White', sky: 'Sky', dark: 'Dark' };
 export const GROUNDS = { none: 'None', grass: 'Grass', paving: 'Paving' };
 
 const KEY = 'mv:look';
@@ -35,8 +42,17 @@ export class Look {
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(KEY)) || {}; } catch { /* private mode */ }
     // own choices on top of the style: null = the style's default
-    this.state = { style: 'technical', bg: null, ground: null, ao: null, edges: null, exposure: 1, ...saved };
+    this.state = { style: 'technical', bg: null, ground: null, ao: null, edges: null, exposure: 1, colours: 'vivid', ...saved };
     if (!STYLES[this.state.style]) this.state.style = 'technical';
+    if (!COLOURS[this.state.colours]) this.state.colours = 'vivid';
+  }
+
+  get colours() { return COLOURS[this.state.colours]; }
+
+  // the style's light levels with the colour strength on top
+  lightLevels() {
+    const l = this.style.light, c = this.colours;
+    return { hemi: l.hemi * c.hemi, sun: l.sun * c.sun };
   }
 
   get style() { return STYLES[this.state.style]; }
@@ -51,10 +67,11 @@ export class Look {
   // full apply (start-up, style change)
   apply() {
     const v = this.v, s = this.style;
+    v.saturation = this.colours.sat;
     v.setStyle(this.state.style);
     if (s.edges) v.setEdgeLook(s.edges[0], s.edges[1]);
     v.setEdges(this.edges);
-    v.setLightLevels(s.light);
+    v.setLightLevels(this.lightLevels());
     v.setEnvironment(s.env);
     v.setToneMapping(s.tone, this.state.exposure);
     v.setBackground(this.bg);
@@ -82,6 +99,11 @@ export class Look {
     if (key === 'ao') v.setAO(value);
     if (key === 'edges') v.setEdges(value);
     if (key === 'exposure') v.setToneMapping(this.style.tone, value);
+    if (key === 'colours') {
+      v.saturation = this.colours.sat;
+      v.setStyle(this.state.style);        // rebuilds the materials with the new saturation
+      v.setLightLevels(this.lightLevels());
+    }
     this.save();
   }
 }

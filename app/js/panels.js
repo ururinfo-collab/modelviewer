@@ -4,11 +4,11 @@ import { fmt, fmtVol, fmtArea, getUnit, setUnit, UNITS } from './units.js';
 import { sunPosition, sunVectorSrc, localToUtc, SKETCHUP_DEFAULT, FALLBACK } from './sun.js';
 import { getSetting, setSetting, listRecent, deleteRecent } from './store.js';
 import { icon } from './icons.js';
-import { STYLES, BACKGROUNDS, GROUNDS } from './look.js';
+import { STYLES, BACKGROUNDS, GROUNDS, COLOURS } from './look.js';
 import { quantities, toCSV } from './quantities.js';
 import { PRESETS, GEMINI_MODELS } from './ai.js';
 
-export const APP_VERSION = '1.19.0';
+export const APP_VERSION = '1.20.0';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look', qty: 'Quantities', compare: 'Compare revisions', notes: 'Notes', ai: 'AI render', share: 'Client link' };
 
@@ -529,7 +529,8 @@ export class Panels {
       `<button data-set="${key}" data-val="${k}" class="${cur === k ? 'on' : ''}">${n}</button>`).join('')}</div>`;
     let h = '<div class="menu stylelist">' + Object.entries(STYLES).map(([k, d]) =>
       `<button data-style="${k}" class="${s.style === k ? 'on' : ''}"><b>${s.style === k ? '✓ ' : ''}${d.label}</b><small>${d.note}</small></button>`).join('') + '</div>';
-    h += '<p class="note" style="margin-top:12px">Background</p>' + seg('bg', BACKGROUNDS, L.bg);
+    h += '<p class="note" style="margin-top:12px">Colours</p>' + seg('colours', Object.fromEntries(Object.entries(COLOURS).map(([k, c]) => [k, c.label])), s.colours);
+    h += '<p class="note">Background</p>' + seg('bg', BACKGROUNDS, L.bg);
     h += '<p class="note">Ground</p>' + seg('ground', GROUNDS, L.ground);
     h += `<label class="toggle">Soft shadows in corners (ambient occlusion)<input type="checkbox" data-k="ao" ${L.ao ? 'checked' : ''}></label>`;
     h += `<label class="toggle">Sun shadows<input type="checkbox" data-k="shadows" ${this.v.shadows ? 'checked' : ''}></label>`;

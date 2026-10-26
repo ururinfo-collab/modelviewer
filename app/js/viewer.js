@@ -525,6 +525,11 @@ export class Viewer extends EventTarget {
   styledMaterial(src) {
     const opacity = src.opacity ?? 1, glass = !!src.transparent || opacity < 0.999;
     const color = src.color ? src.color.clone() : new THREE.Color(0xdddddd);
+    // Look › Colours: stronger or softer model colours (in the screen's sRGB terms, as a designer sees them)
+    if (this.saturation && this.saturation !== 1) {
+      const hsl = color.getHSL({}, THREE.SRGBColorSpace);
+      color.setHSL(hsl.h, Math.min(1, hsl.s * this.saturation), hsl.l, THREE.SRGBColorSpace);
+    }
     const common = { name: src.name, side: THREE.DoubleSide, transparent: glass, opacity,
       polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 };
     switch (this.style) {
