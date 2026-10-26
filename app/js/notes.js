@@ -20,11 +20,32 @@ export class Notes {
 
   load() {
     for (const el of this.pins.values()) el.remove();
+    this.layer.querySelectorAll('.pin').forEach(el => el.remove());   // strays from any earlier model
     this.pins.clear();
     try { this.list = JSON.parse(localStorage.getItem(this.key)) || []; } catch { this.list = []; }
+    if (!Array.isArray(this.list)) this.list = [];
+    if (this.tidy()) this.save();
     this.list.forEach(n => this.pin(n));
     this.onChange?.();
   }
+
+  // every note gets its own text id and a text, so each one can be opened and deleted
+  // (a note without an id, or two with the same id, could not be told apart)
+  tidy() {
+    const seen = new Set();
+    let changed = false;
+    this.list = this.list.filter(n => n && Array.isArray(n.at));
+    this.list.forEach((n, i) => {
+      let id = n.id == null || n.id === '' ? '' : String(n.id);
+      while (!id || seen.has(id)) id = (Date.now() + i).toString(36) + Math.random().toString(36).slice(2, 6);
+      if (id !== n.id) { n.id = id; changed = true; }
+      seen.add(id);
+      if (typeof n.text !== 'string') { n.text = n.text == null ? '' : String(n.text); changed = true; }
+    });
+    return changed;
+  }
+
+  find(id) { return this.list.find(x => x.id === String(id)); }
 
   save() {
     try { localStorage.setItem(this.key, JSON.stringify(this.list)); return true; } catch { return false; }
@@ -45,7 +66,7 @@ export class Notes {
   }
 
   update(id, text, photo) {
-    const n = this.list.find(x => x.id === id);
+    const n = this.find(id);
     if (!n) return;
     n.text = text;
     if (photo !== undefined) n.photo = photo;
@@ -55,12 +76,23 @@ export class Notes {
   }
 
   remove(id) {
+    id = String(id);
     this.list = this.list.filter(x => x.id !== id);
     this.pins.get(id)?.remove();
     this.pins.delete(id);
     this.renumber();
-    this.save();
+    const ok = this.save();
     this.onChange?.();
+    return ok;
+  }
+
+  removeAll() {
+    this.list = [];
+    for (const el of this.pins.values()) el.remove();
+    this.pins.clear();
+    const ok = this.save();
+    this.onChange?.();
+    return ok;
   }
 
   pin(n) {
@@ -83,6 +115,11 @@ export class Notes {
   }
 
   place() {
+    // a pin whose note is gone never stays on screen
+    if (this.pins.size !== this.list.length) {
+      const ids = new Set(this.list.map(n => n.id));
+      for (const [id, el] of this.pins) if (!ids.has(id)) { el.remove(); this.pins.delete(id); }
+    }
     for (const n of this.list) {
       const el = this.pins.get(n.id);
       if (!el) continue;
@@ -95,8 +132,8 @@ export class Notes {
   setVisible(on) { this.visible = on; this.v.requestRender(); }
 
   go(id) {
-    const n = this.list.find(x => x.id === id);
-    if (n) this.v.flyTo(new THREE.Vector3().fromArray(n.view.pos), new THREE.Vector3().fromArray(n.view.target), n.view.fov);
+    const n = this.find(id);
+    if (n?.view) this.v.flyTo(new THREE.Vector3().fromArray(n.view.pos), new THREE.Vector3().fromArray(n.view.target), n.view.fov);
   }
 
   exportFile() {
@@ -109,10 +146,13 @@ export class Notes {
   importData(data) {
     if (data?.format !== 'mv-notes/1') throw new Error('Not a notes file');
     for (const n of data.notes) {
-      const i = this.list.findIndex(x => x.id === n.id);
-      if (i >= 0) this.list[i] = n; else this.list.push(n);
-      this.pin(n);
+      if (!n || !Array.isArray(n.at)) continue;
+      if (n.id != null) n.id = String(n.id);
+      const i = n.id ? this.list.findIndex(x => x.id === n.id) : -1;
+      if (i >= 0) { this.pins.get(n.id)?.remove(); this.pins.delete(n.id); this.list[i] = n; } else this.list.push(n);
     }
+    this.tidy();
+    this.list.forEach(n => this.pin(n));
     this.save();
     this.onChange?.();
     return data.notes.length;

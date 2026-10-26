@@ -824,7 +824,7 @@ app.startNote = startNote;
 
 function showNoteDlg(draft, text) {
   noteDraft = draft;
-  $('#noteTitle').textContent = draft.id ? `Note ${app.notes.list.findIndex(n => n.id === draft.id) + 1}` : 'New note';
+  $('#noteTitle').textContent = draft.id ? `Note ${app.notes.list.indexOf(app.notes.find(draft.id)) + 1}` : 'New note';
   $('#noteText').value = text || '';
   $('#notePhoto').innerHTML = draft.photo ? `<img src="${draft.photo}" alt="">` : '';
   $('#noteDlg [data-nd=nophoto]').hidden = !draft.photo;
@@ -835,10 +835,15 @@ function showNoteDlg(draft, text) {
 }
 
 function openNote(id) {
-  const n = app.notes.list.find(x => x.id === id);
-  if (n) showNoteDlg({ id, photo: n.photo }, n.text);
+  const n = app.notes.find(id);
+  if (n) showNoteDlg({ id: n.id, photo: n.photo }, n.text);
 }
 app.openNote = openNote;
+
+function deleteNote(id) {
+  if (!app.notes.remove(id)) toast('The note is gone from the screen, but the device could not save the change', 5000);
+}
+app.deleteNote = deleteNote;
 
 $('#noteDlg').onclick = async e => {
   const a = e.target.closest('[data-nd]')?.dataset.nd;
@@ -847,7 +852,7 @@ $('#noteDlg').onclick = async e => {
   if (a === 'photo') return $('#notePhotoFile').click();
   if (a === 'nophoto') { d.photo = null; $('#notePhoto').innerHTML = ''; e.target.closest('button').hidden = true; return; }
   if (a === 'go') { N.go(d.id); }
-  if (a === 'delete' && confirm('Delete this note?')) N.remove(d.id);
+  if (a === 'delete' && confirm('Delete this note?')) deleteNote(d.id);
   if (a === 'save') {
     const text = $('#noteText').value.trim();
     if (d.id) N.update(d.id, text, d.photo);

@@ -7,7 +7,7 @@ import { icon } from './icons.js';
 import { STYLES, BACKGROUNDS, GROUNDS } from './look.js';
 import { quantities, toCSV } from './quantities.js';
 
-export const APP_VERSION = '1.16.0';
+export const APP_VERSION = '1.17.0';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look', qty: 'Quantities', compare: 'Compare revisions', notes: 'Notes' };
 
@@ -417,16 +417,23 @@ export class Panels {
     h += `<label class="toggle">Show the pins<input type="checkbox" data-k="pins" ${N.visible ? 'checked' : ''}></label>`;
     if (!N.list.length) h += '<p class="note">No notes yet. Tap Add a note, then tap the spot on the model.</p>';
     else h += '<p class="note">Saved on this device for this model. Export to move them to another phone or computer.</p>';
-    h += N.list.map((n, i) => `<div class="row"><span class="nm" data-open="${n.id}"><b>${i + 1}.</b> ${esc(n.text.split('\n')[0] || '(no text)')}` +
-      `<small>${n.date}${n.photo ? ' · photo' : ''}</small></span>` +
-      `<button class="ib" data-goto="${n.id}" data-icon="zoom" title="Go to its view"></button></div>`).join('');
+    h += N.list.map((n, i) => `<div class="row"><span class="nm" data-open="${esc(n.id)}"><b>${i + 1}.</b> ${esc(n.text.split('\n')[0] || '(no text)')}` +
+      `<small>${esc(n.date || '')}${n.photo ? ' · photo' : ''}</small></span>` +
+      `<button class="ib" data-goto="${esc(n.id)}" data-icon="zoom" title="Go to its view"></button>` +
+      `<button class="ib" data-del="${esc(n.id)}" data-icon="trash" title="Delete this note"></button></div>`).join('');
+    if (N.list.length > 1) h += '<div class="btnrow"><button class="btn" data-act="clear">Delete all notes</button></div>';
     this.body.innerHTML = h;
     this.body.onclick = e => {
-      const t = e.target.closest('[data-act],[data-open],[data-goto]');
+      const t = e.target.closest('[data-act],[data-open],[data-goto],[data-del]');
       if (!t) return;
       if (t.dataset.act === 'add') return this.app.startNote();
       if (t.dataset.act === 'export') return this.app.saveFile(N.exportFile());
       if (t.dataset.act === 'import') return document.getElementById('notesFile').click();
+      if (t.dataset.act === 'clear') {
+        if (confirm(`Delete all ${N.list.length} notes of this model?`) && !N.removeAll()) this.app.toast('The device could not save the change', 5000);
+        return;
+      }
+      if (t.dataset.del) { if (confirm('Delete this note?')) this.app.deleteNote(t.dataset.del); return; }
       if (t.dataset.open) return this.app.openNote(t.dataset.open);
       if (t.dataset.goto) N.go(t.dataset.goto);
     };
