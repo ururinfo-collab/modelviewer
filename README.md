@@ -81,7 +81,7 @@ Isolate, See-thru, Move.
 |---|---|
 | Layers | Show / hide / isolate by **Tags** (SketchUp tags or COLLADA categories) or by **Categories** (walls, doors, windows, furniture, plumbing..., guessed from names; rules in `app/js/categories.js`) |
 | Tree | Model tree with search, eye toggles, zoom to |
-| Section | Plan cut (height slider), across, along, or parallel to a tapped face; flip; cut solids show red |
+| Section | Plan cut (height slider), across, along, or parallel to a tapped face; flip; cut solids show red. **Box**: six cuts around the selection (select a room's floor: a dollhouse view into that room) or around everything; each side has a slider and -/+ 10 cm |
 | Measure | **Distance** (two taps, corners snap; with horizontal / vertical parts), **Area** (tap the corners, then the first corner again or Finish; works on floors, walls and sloped roofs; shows perimeter too) and **Angle** (end, corner, end); units m, mm, ft-in |
 | Walk | Tap where to stand. Left thumb joystick walks, drag elsewhere looks. Follows floors and stairs, walls block (toggle). Fly mode for up / down. Keyboard: WASD, Q/E, Shift |
 | Build | Construction time-lapse, see below |

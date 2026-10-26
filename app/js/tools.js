@@ -15,13 +15,22 @@ export class SectionTool {
     this.normal = new THREE.Vector3();
     this.origin = new THREE.Vector3();
     this.plane = new THREE.Plane();
+    // section box: six planes facing inwards; what is inside all of them stays
+    this.box = new THREE.Box3();
+    this.boxPlanes = Array.from({ length: 6 }, () => new THREE.Plane());
+    this.helperBox = new THREE.Box3();        // drawn a hair inside, so the cut never hides the outline
+    this.boxHelper = new THREE.Box3Helper(this.helperBox, 0xd23c2c);
+    this.boxHelper.visible = false;
+    this.boxHelper.raycast = () => {};
+    viewer.scene.add(this.boxHelper);
   }
 
-  // mode: off | plan | x | z | face
+  // mode: off | plan | x | z | face | box
   set(mode, hit) {
     const v = this.v, b = v.box;
     this.mode = mode;
     if (mode === 'off') return this.apply();
+    if (mode === 'box') return this.fitBox(v.selected ? v.entityBox(v.selected) : v.visibleBox(), !!v.selected);
     if (mode === 'plan') {
       this.normal.set(0, -1, 0);
       this.range = [b.min.y, b.max.y];
@@ -46,10 +55,48 @@ export class SectionTool {
   setValue(x) { this.value = x; this.apply(); }
   toggleFlip() { this.flip = !this.flip; this.apply(); }
 
+  // box around an object (a room: its floor, a piece of furniture in it...) or around everything.
+  // Around a flat object (a floor) the box rises to just under the ceiling: a dollhouse view
+  // into the room (raise Top to include the ceiling).
+  fitBox(b, around) {
+    this.mode = 'box';
+    this.box.copy(b);
+    if (around) {
+      this.box.expandByScalar(0.25);
+      if (this.box.max.y - this.box.min.y < 2.4) this.box.max.y = this.box.min.y + 2.3;
+    }
+    this.apply();
+  }
+
+  // side: minX maxX minY maxY minZ maxZ (x = red axis, z = green, y = up)
+  moveSide(side, delta) {
+    const k = side.slice(3).toLowerCase(), end = side.slice(0, 3);
+    this.box[end][k] += delta;
+    if (this.box.min[k] > this.box.max[k] - 0.05) this.box[end][k] = end === 'min' ? this.box.max[k] - 0.05 : this.box.min[k] + 0.05;
+    this.apply();
+  }
+
+  setSide(side, value) {
+    const k = side.slice(3).toLowerCase(), end = side.slice(0, 3);
+    this.box[end][k] = value;
+    this.moveSide(side, 0);
+  }
+
   apply() {
     const v = this.v;
+    this.boxHelper.visible = this.mode === 'box';
     if (this.mode === 'off') {
       v.clipPlanes = [];
+    } else if (this.mode === 'box') {
+      const { min, max } = this.box, P = this.boxPlanes;
+      P[0].set(new THREE.Vector3(1, 0, 0), -min.x);
+      P[1].set(new THREE.Vector3(-1, 0, 0), max.x);
+      P[2].set(new THREE.Vector3(0, 1, 0), -min.y);
+      P[3].set(new THREE.Vector3(0, -1, 0), max.y);
+      P[4].set(new THREE.Vector3(0, 0, 1), -min.z);
+      P[5].set(new THREE.Vector3(0, 0, -1), max.z);
+      v.clipPlanes = P;
+      this.helperBox.copy(this.box).expandByScalar(-0.005);
     } else {
       const n = this.normal.clone();
       let point;

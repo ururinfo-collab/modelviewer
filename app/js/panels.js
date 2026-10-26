@@ -7,7 +7,7 @@ import { icon } from './icons.js';
 import { STYLES, BACKGROUNDS, GROUNDS } from './look.js';
 import { quantities, toCSV } from './quantities.js';
 
-export const APP_VERSION = '1.13.0';
+export const APP_VERSION = '1.14.0';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look', qty: 'Quantities', compare: 'Compare revisions', notes: 'Notes' };
 
@@ -23,6 +23,7 @@ export class Panels {
     this.v.addEventListener('visibility', () => { if (['layers', 'tree'].includes(this.name)) this.refresh(); });
     this.v.addEventListener('select', () => {
       if (this.name === 'info') this.render('info');
+      if (this.name === 'section') this.render('section', true);
       if (this.name === 'tree') { this.revealSelected(); this.refresh(); this.scrollToSelected(); }
     });
   }
@@ -231,8 +232,9 @@ export class Panels {
   section() {
     const s = this.app.section, mode = s.mode;
     const b = (m, label) => `<button class="btn ${mode === m ? 'on' : ''}" data-mode="${m}">${label}</button>`;
-    let h = `<div class="btnrow">${b('off', 'Off')}${b('plan', 'Plan (horizontal)')}${b('x', 'Across')}${b('z', 'Along')}${b('face', 'On a face…')}</div>`;
+    let h = `<div class="btnrow">${b('off', 'Off')}${b('plan', 'Plan (horizontal)')}${b('x', 'Across')}${b('z', 'Along')}${b('face', 'On a face…')}${b('box', 'Box')}</div>`;
     if (this.app.tool === 'sectionPick') h += '<p class="warn">Tap a wall or floor to cut parallel to it.</p>';
+    if (mode === 'box') return this.sectionBox(h);
     if (mode !== 'off') {
       const [lo, hi] = s.range;
       const label = mode === 'plan' ? 'Height' : 'Position';
@@ -253,6 +255,39 @@ export class Panels {
         s.setValue(THREE.MathUtils.clamp(s.value + (t.dataset.act === 'p' ? 0.1 : -0.1), s.range[0], s.range[1]));
         this.render('section');
       }
+    };
+  }
+
+  // six sides: a slider each over the model's extent (plus a metre), -10 / +10 cm buttons
+  sectionBox(head) {
+    const s = this.app.section, v = this.v, B = s.box, M = v.box;
+    const sides = [
+      ['minX', 'Left (red −)', 'x'], ['maxX', 'Right (red +)', 'x'],
+      ['maxZ', 'Front (green −)', 'z'], ['minZ', 'Back (green +)', 'z'],
+      ['minY', 'Bottom', 'y'], ['maxY', 'Top', 'y'],
+    ];
+    let h = head;
+    h += `<div class="btnrow"><button class="btn primary" data-fit="sel" ${v.selected ? '' : 'disabled'}>Box around the selection</button>` +
+      '<button class="btn" data-fit="all">Box around everything</button><button class="btn" data-fit="zoom">Zoom to the box</button></div>';
+    if (!v.selected) h += '<p class="note">For one room: select its floor (or anything in it), then Box around the selection.</p>';
+    for (const [side, label, k] of sides) {
+      const val = B[side.slice(0, 3)][k];
+      h += `<div class="field"><label>${label}</label><input type="range" data-side="${side}" min="${M.min[k] - 1}" max="${M.max[k] + 1}" step="0.01" value="${val}">` +
+        `<button class="btn" data-nudge="${side}:-0.1">−</button><button class="btn" data-nudge="${side}:0.1">+</button></div>`;
+    }
+    h += `<p class="note">Box ${fmt(B.max.x - B.min.x)} × ${fmt(B.max.z - B.min.z)} × ${fmt(B.max.y - B.min.y)} high. Cut faces show red.</p>`;
+    this.body.innerHTML = h;
+    this.body.oninput = e => { const r = e.target.dataset.side; if (r) s.setSide(r, +e.target.value); };
+    this.body.onchange = e => { if (e.target.dataset.side) this.render('section', true); };
+    this.body.onclick = e => {
+      const t = e.target.closest('button');
+      if (!t) return;
+      if (t.dataset.mode) { s.set(t.dataset.mode); return this.render('section'); }
+      if (t.dataset.fit === 'sel' && v.selected) { s.fitBox(v.entityBox(v.selected), true); v.fitBox(s.box.clone()); }
+      if (t.dataset.fit === 'all') s.fitBox(v.visibleBox(), false);
+      if (t.dataset.fit === 'zoom') v.fitBox(s.box.clone());
+      if (t.dataset.nudge) { const [side, d] = t.dataset.nudge.split(':'); s.moveSide(side, +d); }
+      this.render('section', true);
     };
   }
 
