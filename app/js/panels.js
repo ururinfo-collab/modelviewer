@@ -5,6 +5,7 @@ import { sunPosition, sunVectorSrc, localToUtc, SKETCHUP_DEFAULT, FALLBACK } fro
 import { getSetting, setSetting, listRecent, deleteRecent } from './store.js';
 import { icon } from './icons.js';
 
+export const APP_VERSION = '1.1.1';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More' };
 
@@ -337,7 +338,7 @@ export class Panels {
          `<button class="btn" data-act="resetmoved" ${moved ? '' : 'disabled'}>Reset moved objects (${moved})</button></div>`;
     h += `<div class="btnrow"><button class="btn" data-act="open">Open another model</button><button class="btn" data-act="forget">Clear models kept on this phone</button></div>`;
     if (!standalone) h += `<p class="note">${ios ? 'Install: tap Share, then Add to Home Screen.' : 'Install: browser menu (⋮), then Install app / Add to Home screen.'}</p>`;
-    h += `<p class="note">Model Viewer 1.0 · three.js r180 · ${v.ents.length - 1} objects, ${v.meshes.length} meshes</p>`;
+    h += `<p class="note">Model Viewer ${APP_VERSION} · opens .skp .glb .gltf .dae · three.js r180 · ${v.ents.length - 1} objects, ${v.meshes.length} meshes</p>`;
     this.body.innerHTML = h;
     this.body.onchange = e => {
       const k = e.target.dataset.k;

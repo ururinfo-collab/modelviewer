@@ -749,6 +749,10 @@ document.body.addEventListener('transitionend', updateInset);
 const local = ['localhost', '127.0.0.1'].includes(location.hostname);
 if ('serviceWorker' in navigator && isSecureContext && !local) {
   navigator.serviceWorker.register('sw.js').catch(err => console.warn('No offline mode:', err));
+  // a new version took over: reload once so it is in use now, not on the next launch
+  if (navigator.serviceWorker.controller) {
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (!viewer.root) location.reload(); else toast('App updated. Reopen it to use the new version.', 5000); });
+  }
 }
 
 (async () => {

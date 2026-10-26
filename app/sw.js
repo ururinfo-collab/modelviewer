@@ -1,6 +1,6 @@
 // Offline cache for the app itself (models are kept in IndexedDB by the page),
 // and Android's share target: files shared to the installed app are parked for the page to pick up.
-const VERSION = 'mv-1.1.0';   // bump after changing any app file, so phones fetch the new copy
+const VERSION = 'mv-1.1.1';   // bump after changing any app file, so phones fetch the new copy
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/main.js', 'js/viewer.js', 'js/loaders.js', 'js/tools.js', 'js/transform.js', 'js/capture.js',
@@ -14,7 +14,9 @@ const SHELL = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // 'reload' skips the browser's own HTTP cache, so a new version never caches old files
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' }))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
@@ -36,10 +38,14 @@ self.addEventListener('fetch', e => {
     return;
   }
   if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.includes('/models/')) return;
-  // app files: cached copy at once, refreshed in the background for next time
+  // app files: the newest copy when online (so updates show at once), the saved copy when offline
   e.respondWith(caches.open(VERSION).then(async cache => {
-    const hit = await cache.match(e.request, { ignoreSearch: true });
-    const net = fetch(e.request).then(res => { if (res.ok) cache.put(e.request, res.clone()); return res; }).catch(() => hit);
-    return hit || net;
+    try {
+      const res = await fetch(e.request, { cache: 'no-cache' });
+      if (res.ok) cache.put(e.request, res.clone());
+      return res;
+    } catch {
+      return (await cache.match(e.request, { ignoreSearch: true })) || Response.error();
+    }
   }));
 });
