@@ -5,11 +5,13 @@ installs to the home screen, works offline. Opens any model you give it, every r
 
 | File | How it gets there |
 |---|---|
-| `.glb` from SketchUp | Model Viewer button in SketchUp 2025 (keeps names, tags, all saved scenes, geo-location) |
+| `.skp` | Straight from SketchUp's save folder (WhatsApp, Drive, USB...). Read on the phone by [openskp](https://github.com/iamahsanmehmood/openskp) (MIT, open-source, reverse-engineered). Keeps names, tags, groups, materials, textures, scenes (camera + hidden tags) |
+| `.glb` from SketchUp | Model Viewer button in SketchUp 2025. Everything `.skp` has, plus geo-location, hidden objects and shadow time per scene, IFC / component attributes, solid volumes |
 | `.dae` (COLLADA) | Straight from your exporter, e.g. `dho2_0_rev05.dae` |
 | `.glb` / `.gltf` | Any other glTF (Enscape, Blender...). Pick the `.gltf` with its `.bin` and textures together |
 
-`.skp` itself cannot be read on a phone (closed format), hence the SketchUp export button.
+Rev05 `.skp` (8.9 MB) reads in about 3 s on the PC; expect 10 to 20 s on a phone. If a `.skp` ever fails to open
+(the reader is unofficial), use the export button.
 
 ## Folder
 
@@ -44,7 +46,7 @@ After moving this folder, run `python sketchup/build.py` and reinstall (the .rbz
 - **From SketchUp over Wi-Fi:** Model Viewer button › Export (leave "Start the Wi-Fi link" ticked). On the phone open
   the Wi-Fi address and tap the model under "From the PC". Each export overwrites `exports/<model>.glb`, so after
   a change: Export, then tap it again on the phone. "Selection only" exports just what is selected.
-- **Any file route:** send the `.glb` or `.dae` by WhatsApp, Drive, email, USB or AirDrop, save it, then in the app
+- **Any file route:** send the `.skp`, `.glb` or `.dae` by WhatsApp, Drive, email, USB or AirDrop, save it, then in the app
   tap Open a model file. On Android, after installing the app, you can also Share a file straight to "Viewer".
 - The last 6 models stay on the phone (welcome screen, "On this phone") and open offline.
 
@@ -136,5 +138,6 @@ The repository holds only the app; `exports/` and the .rbz are ignored, so no mo
 
 ## For later changes
 
-- three.js lives in `app/vendor/three` (r180, from jsDelivr). The app has no build step: edit, reload.
+- three.js lives in `app/vendor/three` (r180), openskp 1.3.0 + earcut 3.2.4, fflate 0.8.3, flatbuffers 25.9.23 in
+  `app/vendor/openskp` (all from jsDelivr). The app has no build step: edit, reload.
 - Test on the PC: `python tools/serve.py`, open `http://localhost:8765/?model=models/<file>`.

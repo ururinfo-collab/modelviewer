@@ -63,8 +63,8 @@ function busy(text, frac) {
 async function openFiles(files, keep = true) {
   files = files.filter(f => f && f.blob);
   const main = files.find(f => MODEL_EXT.test(f.name));
-  if (!main) { toast('Pick a .glb, .gltf or .dae file'); return; }
-  busy(`Opening ${main.name}`, 0.05);
+  if (!main) { toast('Pick a .skp, .glb, .gltf or .dae file'); return; }
+  busy(/\.skp$/i.test(main.name) ? `Reading SketchUp file ${main.name} (a few seconds)` : `Opening ${main.name}`, 0.05);
   await nextFrame();
   try {
     const loaded = await loadFiles(files);

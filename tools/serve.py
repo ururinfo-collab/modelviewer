@@ -18,7 +18,7 @@ from pathlib import Path
 from urllib.parse import quote, unquote, urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
-MODEL_EXT = {".glb", ".gltf", ".dae", ".bin", ".json", ".png", ".jpg", ".jpeg"}
+MODEL_EXT = {".skp", ".glb", ".gltf", ".dae", ".bin", ".json", ".png", ".jpg", ".jpeg"}
 
 
 def lan_ips():
@@ -41,7 +41,8 @@ def lan_ips():
 class Handler(SimpleHTTPRequestHandler):
     extensions_map = {**SimpleHTTPRequestHandler.extensions_map, ".js": "text/javascript", ".mjs": "text/javascript",
                       ".webmanifest": "application/manifest+json", ".glb": "model/gltf-binary",
-                      ".gltf": "model/gltf+json", ".dae": "model/vnd.collada+xml"}
+                      ".gltf": "model/gltf+json", ".dae": "model/vnd.collada+xml", ".mjs": "text/javascript",
+                      ".skp": "application/vnd.sketchup.skp"}
 
     def __init__(self, *a, exports=None, **kw):
         self.exports = exports
@@ -68,7 +69,7 @@ class Handler(SimpleHTTPRequestHandler):
         items = []
         if self.exports.is_dir():
             for f in self.exports.iterdir():
-                if (f.name.lower().endswith(kind) if kind else f.suffix.lower() in {".glb", ".gltf", ".dae"}):
+                if (f.name.lower().endswith(kind) if kind else f.suffix.lower() in {".skp", ".glb", ".gltf", ".dae"}):
                     st = f.stat()
                     items.append({"name": f.name, "url": "models/" + quote(f.name), "size": st.st_size, "mtime": st.st_mtime})
         items.sort(key=lambda m: -m["mtime"])

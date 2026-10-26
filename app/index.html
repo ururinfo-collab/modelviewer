@@ -14,7 +14,9 @@
 <link rel="icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="css/app.css">
 <script type="importmap">
-{ "imports": { "three": "./vendor/three/build/three.module.min.js", "three/addons/": "./vendor/three/examples/jsm/" } }
+{ "imports": { "three": "./vendor/three/build/three.module.min.js", "three/addons/": "./vendor/three/examples/jsm/",
+  "openskp": "./vendor/openskp/openskp.mjs", "earcut": "./vendor/openskp/earcut.mjs",
+  "fflate": "./vendor/openskp/fflate.mjs", "flatbuffers": "./vendor/openskp/flatbuffers.mjs" } }
 </script>
 <script type="module" src="js/main.js"></script>
 </head>
@@ -122,11 +124,11 @@
 <div id="welcome">
   <div class="wbox">
     <h1>Model Viewer</h1>
-    <p class="sub">SketchUp (exported .glb) · COLLADA .dae · glTF</p>
+    <p class="sub">SketchUp .skp · COLLADA .dae · glTF / .glb</p>
     <button id="wOpen" class="big">Open a model file</button>
     <div id="wPC" hidden><h3>From the PC (Wi-Fi)</h3><ul id="pcList"></ul></div>
     <div id="wRecent" hidden><h3>On this phone</h3><ul id="recentList"></ul></div>
-    <p class="help">In SketchUp: Extensions › Model Viewer › Export for phone. Or open the .dae straight from Files, Drive or WhatsApp.</p>
+    <p class="help">Open a .skp straight from Files, Drive or WhatsApp. For the geo-location and hidden objects in scenes, use SketchUp › Extensions › Model Viewer › Export (.glb).</p>
     <p class="help" id="wDrop">On a computer you can also drop files here.</p>
   </div>
 </div>

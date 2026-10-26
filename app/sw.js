@@ -1,6 +1,6 @@
 // Offline cache for the app itself (models are kept in IndexedDB by the page),
 // and Android's share target: files shared to the installed app are parked for the page to pick up.
-const VERSION = 'mv-1.0.0';   // bump after changing any app file, so phones fetch the new copy
+const VERSION = 'mv-1.1.0';   // bump after changing any app file, so phones fetch the new copy
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/main.js', 'js/viewer.js', 'js/loaders.js', 'js/tools.js', 'js/transform.js', 'js/capture.js',
@@ -10,6 +10,7 @@ const SHELL = [
   'vendor/three/examples/jsm/controls/OrbitControls.js', 'vendor/three/examples/jsm/controls/TransformControls.js',
   'vendor/three/examples/jsm/loaders/GLTFLoader.js', 'vendor/three/examples/jsm/loaders/ColladaLoader.js',
   'vendor/three/examples/jsm/loaders/TGALoader.js', 'vendor/three/examples/jsm/utils/BufferGeometryUtils.js',
+  'vendor/openskp/openskp.mjs', 'vendor/openskp/earcut.mjs', 'vendor/openskp/fflate.mjs', 'vendor/openskp/flatbuffers.mjs',
 ];
 
 self.addEventListener('install', e => {
