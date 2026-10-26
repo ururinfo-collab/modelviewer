@@ -28,7 +28,9 @@ export class ContactShadow {
     this.rt = new THREE.WebGLRenderTarget(size, size, opts);
     this.rtBlur = new THREE.WebGLRenderTarget(size, size, opts);
     this.plane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
-      new THREE.MeshBasicMaterial({ map: this.rt.texture, transparent: true, depthWrite: false, opacity: 0.85 }));
+      // always in front of a ground or site slab at the same height (no flicker)
+      new THREE.MeshBasicMaterial({ map: this.rt.texture, transparent: true, depthWrite: false, opacity: 0.85,
+        polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 }));
     this.plane.rotation.x = Math.PI / 2;
     this.plane.scale.y = -1;           // the camera looks up from below: flip back
     this.plane.renderOrder = 1;

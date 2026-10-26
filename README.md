@@ -190,6 +190,12 @@ The repository holds only the app; `exports/` and the .rbz are ignored, so no mo
    on every push; the address appears there after a minute.
 4. After changing the app later: bump `VERSION` in `app/sw.js`, commit, push. Phones pick it up on the next launch.
 
+**No flickering surfaces:** the camera's near clipping distance follows the nearest visible part (depth precision is
+set there, so overall views are about 50 times finer than with a fixed 1 cm), and where two faces lie in the same
+plane (a post flush with a wall, tiles on a floor finish) the smaller part always wins instead of the two taking
+turns. On Rev05 this removed about 78 % of the pixels decided by a depth tie. Two parts of the same size class that
+share a face can still meet; nudging one by 1 mm in SketchUp settles it.
+
 ## Limits
 
 - Edge lines are worked out from the faces (40°), not SketchUp's own edges; hidden / soft edges are not used.

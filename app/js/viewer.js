@@ -21,6 +21,11 @@ const GHOST_OPACITY = 0.16;
 const GLASS = new THREE.Color().setRGB(0.85, 0.88, 0.92);   // linear, as BuildLapse
 // stages whose parts form the shell: see-through in the "See inside" view (as BuildLapse's X-ray)
 const ENVELOPE = new Set(['fdn', 'col', 'beam', 'slab', 'steel', 'roof', 'wall', 'open', 'fin', 'rail', 'bound']);
+// Two faces lying in the same plane (a post flush with a wall, a column with a beam, tiles on a floor finish)
+// took turns winning pixels: the shimmer. Now the smaller part always wins: each part's depth is pushed back a
+// hair (polygon offset units, a fraction of a millimetre) by its size class, one class per doubling of volume.
+// Edge lines are never pushed, so they stay on top.
+const sizeClass = vol => THREE.MathUtils.clamp(Math.round(Math.log2(Math.max(vol, 1e-9)) + 14), 0, 28);
 const ease = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
 export class Viewer extends EventTarget {
@@ -170,6 +175,14 @@ export class Viewer extends EventTarget {
       this.gtao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.5, thickness: 1.5, scale: 1, samples: 16 });
       this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
       c.addPass(this.gtao);
+      // the ground planes stay out of its depth picture: no outline along the edge of the ground or its shadow
+      const hideFromDepth = this.gtao._overrideVisibility.bind(this.gtao);
+      this.gtao._overrideVisibility = () => {
+        hideFromDepth();
+        for (const o of [this.contact.plane, this.ground, this.groundSurface]) {
+          if (o.visible) { o.visible = false; this.gtao._visibilityCache.push(o); }
+        }
+      };
       this.profilePass = new ShaderPass(ProfileShader);
       c.addPass(this.profilePass);
       c.addPass(new OutputPass());
@@ -371,8 +384,34 @@ export class Viewer extends EventTarget {
     }
   }
 
+  // Depth precision lives at the near plane: a fixed 1 cm near plane left ~5 mm of precision 30 m away, so
+  // finishes on slabs and other close surfaces flickered. The near plane now sits just short of the closest
+  // visible part (or the ground), about 50 times finer in overall views; inside the house it stays small.
+  fitNear() {
+    const cam = this.camera;
+    if (!this.root || this.renderer.xr.isPresenting) return;
+    if (this._boxesDirty || !this._boxes) {
+      this._boxes = this.meshes.filter(m => m.visible && m.userData.owner?.shown).map(m => new THREE.Box3().setFromObject(m));
+      this._boxesDirty = false;
+    }
+    const p = cam.position;
+    let d = Infinity;
+    for (const b of this._boxes) {
+      const x = b.distanceToPoint(p);
+      if (x < d && (d = x) === 0) break;
+    }
+    if (this.groundSurface.visible || this.ground.visible || this.contact.plane.visible) d = Math.min(d, Math.abs(p.y - this.groundY));
+    const R = this.sphere.radius;
+    const near = THREE.MathUtils.clamp(d * 0.6, Math.max(0.01, R / 4000), R * 0.5);
+    if (Math.abs(near - cam.near) > cam.near * 0.05) {
+      cam.near = near;
+      cam.updateProjectionMatrix();
+    }
+  }
+
   render() {
     const r = this.renderer;
+    this.fitNear();
     this.applyTwoPoint();
     this.fitFog();
     // sun shadows: redraw the shadow map only when something changed (also when a section cut moved)
@@ -385,6 +424,12 @@ export class Viewer extends EventTarget {
     // soft corners and outlines only on solid views (they would darken see-through glass)
     const post = (this.ao || this.profile) && this.composer && this.viewMode === 'solid';
     const moving = this.postWhenStill && performance.now() - this._moved < 200;
+    if (post && this.profile) {
+      const u = this.profilePass.uniforms;
+      u.tDepth.value = this.gtao.depthTexture;
+      u.cameraNear.value = this.camera.near;
+      u.cameraFar.value = this.camera.far;
+    }
     if (post && !moving) this.composer.render();
     else {
       r.render(this.scene, this.camera);
@@ -422,7 +467,8 @@ export class Viewer extends EventTarget {
     this.camera.far = R * 40;
     this.camera.updateProjectionMatrix();
     this.controls.maxDistance = R * 12;
-    const gy = THREE.MathUtils.clamp(0, this.box.min.y, this.box.max.y);
+    const gy = this.groundY = THREE.MathUtils.clamp(0, this.box.min.y, this.box.max.y);
+    this._boxesDirty = true;
     this.ground.position.set(this.sphere.center.x, gy - 0.005, this.sphere.center.z);
     this.ground.scale.setScalar(R * 6);
     this.groundSurface.position.set(this.sphere.center.x, gy - 0.02, this.sphere.center.z);
@@ -604,10 +650,13 @@ export class Viewer extends EventTarget {
     return mat;
   }
 
-  variants(src) {
-    let v = this.mats.get(src);
+  // pri: the part's size class (see sizeClass): bigger parts sit a hair further back in the depth test
+  variants(src, pri = 0) {
+    const key = pri ? ((src.userData._pri ||= {})[pri] ||= { src, pri }) : src;
+    let v = this.mats.get(key);
     if (v) return v;
     const base = this.withSection(this.styledMaterial(src));
+    base.polygonOffsetUnits = 1 + pri;
     const opacity = base.opacity;
     if (base.transparent) base.depthWrite = false;
     // see-through look calibrated on BuildLapse: 16 % opacity, colour 35 % toward pale glass
@@ -631,7 +680,7 @@ export class Viewer extends EventTarget {
       fresh.color.set(0xffb57d);
     }
     v = { base, ghost, sel, fresh };
-    this.mats.set(src, v);
+    this.mats.set(key, v);
     return v;
   }
 
@@ -688,7 +737,12 @@ export class Viewer extends EventTarget {
       mesh.receiveShadow = this.shadows;
       return;
     }
-    mesh.material = Array.isArray(src) ? src.map(s => this.variants(s)[key]) : this.variants(src)[key];
+    let pri = mesh.userData.sizeClass;
+    if (pri == null) {
+      const s = new THREE.Box3().setFromObject(mesh, true).getSize(new THREE.Vector3());
+      pri = mesh.userData.sizeClass = sizeClass(s.x * s.y * s.z);
+    }
+    mesh.material = Array.isArray(src) ? src.map(s => this.variants(s, pri)[key]) : this.variants(src, pri)[key];
     mesh.userData.ghosted = key === 'ghost';
     if (mesh.userData.line) mesh.userData.line.material = key === 'ghost' ? this.edgeGhostMat : this.edgeMat;
     mesh.castShadow = this.shadows && key !== 'ghost';
@@ -762,6 +816,7 @@ export class Viewer extends EventTarget {
     visit(this.rootEnt, false, false);
     this.pickables = this.meshes.filter(m => m.visible && m.userData.owner.obj.visible && this.chainVisible(m));
     this.shadowDirty = true;
+    this._boxesDirty = true;
     // the ground shadow follows what is shown, once things settle (not every frame of a build animation)
     if (this.contact.enabled) { clearTimeout(this._bakeT); this._bakeT = setTimeout(() => this.contact.bake(), 250); }
     this.requestRender();

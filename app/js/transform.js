@@ -30,6 +30,7 @@ export class MoveTool {
     tc.addEventListener('objectChange', () => {
       this.follow();
       viewer.shadowDirty = true;
+      viewer._boxesDirty = true;
       if (viewer.contact.enabled) { clearTimeout(this._bakeT); this._bakeT = setTimeout(() => viewer.contact.bake(), 250); }
     });
     this.applySettings();
