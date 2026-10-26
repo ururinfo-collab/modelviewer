@@ -311,6 +311,53 @@ viewer.addEventListener('visibility', () => {
   if (has !== !!viewer.isolated) buildScenes();
 });
 
+// ---- rows that scroll sideways: also with a mouse (wheel, drag, arrows), not just a finger
+
+function mouseScroll(el) {
+  el.addEventListener('wheel', e => {
+    const sideways = el.scrollWidth > el.clientWidth + 1;
+    if (!sideways || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    el.scrollLeft += e.deltaY;
+    e.preventDefault();
+  }, { passive: false });
+  let drag = null;
+  el.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'mouse' && e.button === 0) drag = { x: e.clientX, left: el.scrollLeft, moved: false };
+  });
+  addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    if (Math.abs(dx) > 5) { drag.moved = true; el.classList.add('dragging'); }
+    if (drag.moved) el.scrollLeft = drag.left - dx;
+  });
+  let draggedAt = 0;
+  addEventListener('pointerup', () => {
+    if (drag?.moved) draggedAt = performance.now();
+    drag = null;
+    el.classList.remove('dragging');
+  });
+  // the click that ends a drag is not a tap on a chip
+  el.addEventListener('click', ev => {
+    if (performance.now() - draggedAt < 250) { ev.stopPropagation(); ev.preventDefault(); }
+  }, { capture: true });
+}
+mouseScroll($('#scenes'));
+mouseScroll($('#tools'));
+$$('.baracts').forEach(mouseScroll);
+
+// arrows at the ends of the views row (computers; phones swipe)
+function updateSceneArrows() {
+  const s = $('#scenes'), max = s.scrollWidth - s.clientWidth;
+  $('#scenesWrap [data-dir="-1"]').hidden = s.scrollLeft <= 2;
+  $('#scenesWrap [data-dir="1"]').hidden = s.scrollLeft >= max - 2;
+}
+$('#scenes').addEventListener('scroll', updateSceneArrows);
+addEventListener('resize', updateSceneArrows);
+new MutationObserver(updateSceneArrows).observe($('#scenes'), { childList: true });
+$$('#scenesWrap .sarrow').forEach(b => {
+  b.onclick = () => { const s = $('#scenes'); s.scrollLeft += +b.dataset.dir * s.clientWidth * 0.8; };
+});
+
 $('#btnHome').onclick = () => { if (app.tool === 'walk') exitTools(); viewer.fitAll(); };
 
 // ---- tool bar ----------------------------------------------------------------

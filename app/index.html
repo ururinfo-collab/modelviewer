@@ -30,7 +30,11 @@
   <button id="btnHome" class="ib" title="Fit the whole model" data-icon="home"></button>
 </header>
 
-<nav id="scenes"></nav>
+<div id="scenesWrap">
+  <button class="sarrow" data-dir="-1" aria-label="Scroll views left" hidden>‹</button>
+  <nav id="scenes"></nav>
+  <button class="sarrow" data-dir="1" aria-label="Scroll views right" hidden>›</button>
+</div>
 
 <nav id="tools" class="glass">
   <button data-tool="layers" data-icon="layers"><span>Layers</span></button>
@@ -131,7 +135,7 @@
     <div id="wRecent" hidden><h3>On this phone</h3><ul id="recentList"></ul></div>
     <p class="help">Open a .skp straight from Files, Drive or WhatsApp. For the geo-location and hidden objects in scenes, use SketchUp › Extensions › Model Viewer › Export (.glb).</p>
     <p class="help" id="wDrop">On a computer you can also drop files here.</p>
-    <p class="help">Version 1.3.0</p>
+    <p class="help">Version 1.3.1</p>
   </div>
 </div>
 
