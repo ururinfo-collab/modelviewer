@@ -38,7 +38,7 @@ export class Viewer extends EventTarget {
     c.rotateSpeed = 0.8;
     c.zoomToCursor = true;
     c.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
-    c.addEventListener('change', () => this.requestRender());
+    c.addEventListener('change', () => { this.flyThrough(); this.requestRender(); });
 
     this.hemi = new THREE.HemisphereLight(0xffffff, 0x9aa0a8, 1.9);
     this.sun = new THREE.DirectionalLight(0xffffff, 1.5);
@@ -85,6 +85,19 @@ export class Viewer extends EventTarget {
   }
 
   requestRender() { this.needsRender = true; }
+
+  // See inside / X-ray: zooming in does not stop at the orbit point; the point moves ahead, so
+  // pinching or scrolling keeps flying forward through walls and furniture into the rooms
+  flyThrough() {
+    const cam = this.camera.position, t = this.controls.target;
+    const d = cam.distanceTo(t);
+    const closing = this._lastDist != null && d < this._lastDist - 1e-4;
+    this._lastDist = d;
+    if (this.viewMode === 'solid' || !closing || d > 0.6 || this._fly && this.tickers.has(this._fly)) return;
+    const dir = t.clone().sub(cam).normalize();
+    t.addScaledVector(dir, 1.2);
+    this._lastDist = cam.distanceTo(t);
+  }
 
   resize() {
     const w = Math.max(1, this.canvas.clientWidth), h = Math.max(1, this.canvas.clientHeight);
@@ -281,7 +294,12 @@ export class Viewer extends EventTarget {
       this.categories.get(E.cat).count++;
     }
     this.byPid = new Map(this.ents.filter(E => E.pid != null).map(E => [E.pid, E]));
-    for (const E of this.ents) E.envelope = E.meshes.length > 0 && ENVELOPE.has(autoStage(E));
+    for (const E of this.ents) {
+      E.stage = E.meshes.length ? autoStage(E) : null;
+      E.envelope = ENVELOPE.has(E.stage);
+      // what you can stand on in Walk: the shell (slabs, floors), stairs, the ground; never furniture
+      E.walkable = E.envelope || E.stage === 'stair' || E.stage === 'site' || E.stage === 'other' || E.stage === 'ctx';
+    }
     // top level made of containers only (tag groups, COLLADA categories): a tap picks the object inside
     const kids = top.children, containers = kids.filter(E => E.children.length && !E.meshes.length).length;
     if (kids.length >= 3 && containers / kids.length >= 0.8) this.objectsUnderTags = true;
@@ -518,10 +536,21 @@ export class Viewer extends EventTarget {
     return open[0] || null;
   }
 
-  ray(origin, dir, far) {
+  // where to stand: the first floor-like surface (slab, floor, stair, ground, facing up) under
+  // the finger, looking through see-through walls and past furniture
+  pickFloor(x, y) {
+    this.raycaster.setFromCamera(this.ndc(x, y), this.camera);
+    const hits = this.raycaster.intersectObjects(this.pickables, false)
+      .filter(h => !this.clipPlanes.some(p => p.distanceToPoint(h.point) < 0));
+    const up = h => h.face && h.face.normal.clone().transformDirection(h.object.matrixWorld).y > 0.7;
+    return hits.find(h => h.object.userData.owner.walkable && up(h)) || hits[0] || null;
+  }
+
+  ray(origin, dir, far, filter = null) {
     this.raycaster.set(origin, dir);
     this.raycaster.far = far;
-    const h = this.firstHit(this.raycaster.intersectObjects(this.pickables, false), false);   // walls and floors count
+    const list = filter ? this.pickables.filter(m => filter(m.userData.owner)) : this.pickables;
+    const h = this.firstHit(this.raycaster.intersectObjects(list, false), false);   // see-through walls and floors count
     this.raycaster.far = Infinity;
     return h;
   }

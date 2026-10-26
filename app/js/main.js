@@ -851,9 +851,12 @@ $('.walkbtns').onclick = e => {
     b.classList.toggle('on', w.fly);
     $$('.walkbtns [data-wk=up], .walkbtns [data-wk=down]').forEach(x => { x.hidden = !w.fly; });
   }
-  if (a === 'collide') { w.collide = !w.collide; toast(w.collide ? 'Walls block you' : 'Walk through walls'); }
+  if (a === 'collide') {
+    w.collide = !w.collide;
+    toast(w.free ? 'In See inside and X-ray nothing blocks you' : w.collide ? 'Walls block you' : 'Walk through walls');
+  }
   if (a === 'exit') exitTools();
-  $('.walkbtns [data-wk=collide]').classList.toggle('on', !w.collide);
+  $('.walkbtns [data-wk=collide]').classList.toggle('on', !w.collide || w.free);
 };
 
 // ---- gestures on the 3D view -------------------------------------------------
@@ -892,8 +895,13 @@ function onTap(x, y) {
   const t = app.tool;
   if (t === 'walk') {
     if (!app.walk.placed) {
-      const h = viewer.pick(x, y);
-      if (h) { app.walk.place(h); $('#walkHint').hidden = true; toast('Left thumb: walk. Drag elsewhere: look around.'); }
+      const h = viewer.pickFloor(x, y);
+      if (h) {
+        app.walk.place(h);
+        $('#walkHint').hidden = true;
+        toast(app.walk.free ? 'Left thumb: walk, drag elsewhere: look. Walls and furniture do not block you here.'
+                            : 'Left thumb: walk. Drag elsewhere: look around.', 3500);
+      }
     }
     return;
   }

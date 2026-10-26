@@ -244,12 +244,17 @@ export class WalkTool {
     this.updateCamera();
   }
 
+  // floors, stairs and the ground carry you; beds and tables do not
   floorBelow(from, far) {
-    const h = this.v.ray(from, new THREE.Vector3(0, -1, 0), far);
+    const h = this.v.ray(from, new THREE.Vector3(0, -1, 0), far, E => E.walkable);
     return h ? h.point.y : null;
   }
 
+  // nothing blocks you in the See inside and X-ray views
+  get free() { return this.v.viewMode !== 'solid'; }
+
   blocked(dir, dist) {
+    if (this.free) return false;
     for (const hgt of [0.5, 1.2]) {
       const o = this.feet.clone().add(new THREE.Vector3(0, hgt, 0));
       if (this.v.ray(o, dir, dist + 0.3)) return true;
