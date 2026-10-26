@@ -81,7 +81,7 @@ Isolate, See-thru, Move.
 | Measure | Tap two points, corners snap; shows length plus horizontal / vertical parts; units m, mm, ft-in |
 | Walk | Tap where to stand. Left thumb joystick walks, drag elsewhere looks. Follows floors and stairs, walls block (toggle). Fly mode for up / down. Keyboard: WASD, Q/E, Shift |
 | Build | Construction time-lapse, see below |
-| X-ray | Everything see-through; the selection stays solid |
+| X-ray | Everything see-through; the selection stays solid. A **See-through** bar sets how see-through (2% faint to 95% almost solid, remembered); the same level applies to objects made See-thru. Everything toggles X-ray, All solid clears both |
 | Sun | Shadows on/off, time of day, date, Play the day, **Record the day**, site location (Yangon / Mandalay buttons) |
 | Photo | Screenshot (size 1x / 2x / 3x in More) |
 | Record | Records the 3D view to video (MP4 on iPhone and recent Android Chrome, else WebM) |

@@ -60,6 +60,7 @@ export class Viewer extends EventTarget {
     this.continuous = 0;
     this.needsRender = true;
     this.xray = false;
+    this.ghostOpacity = 0.14;
     this.edges = true;
     this.shadows = false;
     this.selected = null;
@@ -332,8 +333,8 @@ export class Viewer extends EventTarget {
     if (base.transparent) base.depthWrite = false;
     const ghost = this.withSection(base.clone());
     ghost.transparent = true;
-    ghost.opacity = Math.min(opacity, 0.14);
-    ghost.depthWrite = false;
+    ghost.userData.maxOpacity = opacity;
+    this.styleGhost(ghost);
     const sel = this.withSection(base.clone());
     sel.emissive = new THREE.Color(0x2f6fe0);
     sel.emissiveIntensity = 0.5;
@@ -363,7 +364,27 @@ export class Viewer extends EventTarget {
     this.requestRender();
   }
 
-  setXray(on) { this.xray = on; this.refreshMaterials(); }
+  setXray(on) { this.xray = on; this.styleEdges(); this.refreshMaterials(); }
+
+  // how solid see-through things are (X-ray and See-thru objects), 0.02 .. 0.95
+  setGhostOpacity(x) {
+    this.ghostOpacity = Math.min(0.95, Math.max(0.02, x));
+    for (const v of this.mats.values()) this.styleGhost(v.ghost);
+    this.styleEdges();
+    this.requestRender();
+  }
+
+  // in X-ray the edge lines fade with the faces, else the house reads as a dark wire mesh
+  styleEdges() {
+    this.edgeMat.opacity = this.xray ? Math.min(0.6, 0.12 + this.ghostOpacity * 0.8) : 0.6;
+  }
+
+  styleGhost(m) {
+    m.opacity = Math.min(m.userData.maxOpacity ?? 1, this.ghostOpacity);
+    // fairly solid: write depth so faces sort like solid ones; faint: let everything show through
+    const depth = this.ghostOpacity > 0.6;
+    m.depthWrite = depth;
+  }
 
   setEdges(on) {
     this.edges = on;

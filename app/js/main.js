@@ -493,7 +493,9 @@ $('#tools').onclick = async e => {
   }
   if (t === 'xray') {
     viewer.setXray(!viewer.xray);
-    toast(viewer.xray ? 'X-ray on: everything see-through, the selection stays solid' : 'X-ray off');
+    app.xrayBar = viewer.xray;
+    if (viewer.xray) toast('X-ray: everything see-through, the selection stays solid. Slide to adjust.');
+    updateBars();
     return setToolButtons();
   }
   if (t === 'shot') {
@@ -600,6 +602,33 @@ $('#buildbar').onclick = e => {
   updateBuildBar();
 };
 
+// ---- transparency bar ----------------------------------------------------------
+
+function setSeeThrough(pct, save = true) {
+  viewer.setGhostOpacity(pct / 100);
+  $('#xrayRange').value = pct;
+  $('#xrayVal').textContent = `${Math.round(pct)}%`;
+  if (save) try { localStorage.setItem('mv:ghost', String(pct)); } catch { /* private mode */ }
+}
+try { setSeeThrough(+localStorage.getItem('mv:ghost') || 14, false); } catch { setSeeThrough(14, false); }
+
+$('#xrayRange').oninput = e => setSeeThrough(+e.target.value);
+$('#xraybar').onclick = e => {
+  const a = e.target.closest('[data-xr]')?.dataset.xr;
+  if (!a) return;
+  if (a === 'all') viewer.setXray(!viewer.xray);
+  if (a === 'solid') {
+    app.history.record('Make all solid');
+    viewer.setXray(false);
+    for (const E of viewer.ents) E.ghost = false;
+    viewer.refreshMaterials();
+    app.xrayBar = false;
+  }
+  if (a === 'done') app.xrayBar = false;
+  updateBars();
+  setToolButtons();
+};
+
 // Build orders loaded once stay on the phone and work for every revision (parts match by name).
 // Each model remembers which order it uses ('auto' or an order's name).
 const ORDERS_KEY = 'mv:orders';
@@ -690,6 +719,8 @@ function updateBars() {
   $('#movebar').hidden = t !== 'move';
   $('#measurebar').hidden = t !== 'measure';
   $('#buildbar').hidden = t !== 'build';
+  $('#xraybar').hidden = !app.xrayBar || !!t;
+  $('#xraybar [data-xr=all]').classList.toggle('on', viewer.xray);
   if (t !== 'build') $('#orderMenu').hidden = true;
   if (E) $('#selName').textContent = E.name;
   if (E) {
@@ -732,7 +763,12 @@ $('#selbar').onclick = e => {
     if (viewer.isolated?.has(E)) viewer.isolate(null);
     else { viewer.isolate([E]); viewer.zoomTo(E); }
   }
-  if (a === 'ghost') { app.history.record(`See-through ${E.name}`); viewer.setGhost(E, !E.ghost); updateBars(); }
+  if (a === 'ghost') {
+    app.history.record(`See-through ${E.name}`);
+    viewer.setGhost(E, !E.ghost);
+    if (E.ghost) app.xrayBar = true;     // show the slider so the level can be set
+    updateBars();
+  }
   if (a === 'move') { app.panels.close(); setTool('move'); app.move.start(E); updateBars(); toast('Drag the arrows. Rotate and Up/down below.'); }
   if (a === 'close') viewer.select(null);
 };
@@ -903,7 +939,7 @@ function updateInset() {
   const w = innerWidth, h = innerHeight;
   // the panel and the tool bars take screen room; the small selection bar does not count, so
   // selecting does not shift the view
-  const blocks = ['#panel', '#buildbar', '#measurebar', '#movebar'].map(s => $(s)).filter(el => !el.hidden);
+  const blocks = ['#panel', '#buildbar', '#measurebar', '#movebar', '#xraybar'].map(s => $(s)).filter(el => !el.hidden);
   if (document.body.classList.contains('walking')) viewer.setInset(0, 0);
   else if (matchMedia('(orientation: landscape)').matches) {
     const left = $('#tools').getBoundingClientRect().right;
@@ -916,7 +952,7 @@ function updateInset() {
   }
 }
 new ResizeObserver(updateInset).observe($('#dock'));
-for (const s of ['#panel', '#buildbar', '#measurebar', '#movebar']) {
+for (const s of ['#panel', '#buildbar', '#measurebar', '#movebar', '#xraybar']) {
   new MutationObserver(updateInset).observe($(s), { attributes: true, attributeFilter: ['hidden'] });
 }
 addEventListener('resize', updateInset);
