@@ -8,7 +8,7 @@ import { STYLES, BACKGROUNDS, GROUNDS, COLOURS } from './look.js';
 import { quantities, toCSV } from './quantities.js';
 import { PRESETS, GEMINI_MODELS } from './ai.js';
 
-export const APP_VERSION = '1.20.0';
+export const APP_VERSION = '1.21.0';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look', qty: 'Quantities', compare: 'Compare revisions', notes: 'Notes', ai: 'AI render', share: 'Client link' };
 
@@ -535,8 +535,10 @@ export class Panels {
     h += `<label class="toggle">Soft shadows in corners (ambient occlusion)<input type="checkbox" data-k="ao" ${L.ao ? 'checked' : ''}></label>`;
     h += `<label class="toggle">Sun shadows<input type="checkbox" data-k="shadows" ${this.v.shadows ? 'checked' : ''}></label>`;
     h += `<label class="toggle">Edge lines<input type="checkbox" data-k="edges" ${L.edges ? 'checked' : ''}></label>`;
+    h += `<label class="toggle">Soft ground shadow<input type="checkbox" data-k="contact" ${L.contact ? 'checked' : ''}></label>`;
+    h += `<label class="toggle">Straight verticals (no leaning walls)<input type="checkbox" data-k="twoPoint" ${L.twoPoint ? 'checked' : ''}></label>`;
     if (st.tone) h += `<div class="field"><label>Brightness</label><input type="range" data-k="exposure" min="0.5" max="1.8" step="0.05" value="${s.exposure}"><output>${s.exposure.toFixed(2)}</output></div>`;
-    h += '<p class="note">Soft corners are off on phones unless you switch them on (they cost battery). In See inside and X-ray they pause.</p>';
+    h += '<p class="note">Soft corners are off on phones unless you switch them on (they cost battery); in Presentation they come on and are drawn when the view rests. In See inside and X-ray they pause.</p>';
     this.body.innerHTML = h;
     this.body.onclick = e => {
       const b = e.target.closest('button');
@@ -548,6 +550,7 @@ export class Panels {
       const k = e.target.dataset.k;
       if (k === 'ao') L.set('ao', e.target.checked);
       if (k === 'edges') L.set('edges', e.target.checked);
+      if (k === 'contact' || k === 'twoPoint') L.set(k, e.target.checked);
       if (k === 'exposure') { L.set('exposure', +e.target.value); e.target.nextElementSibling.textContent = (+e.target.value).toFixed(2); }
       if (k === 'shadows') {
         const S = this.sunState;

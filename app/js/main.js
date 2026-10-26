@@ -179,11 +179,12 @@ async function fetchOrder(url) {
     return { name: decodeURIComponent(u.split('/').pop()), blob: await r.blob() };
   };
   try {
-    const own = await tryGet(url.replace(/\.[^./?]+(\?.*)?$/, '.sequence.json'));
-    if (own) return own;
+    // the server's list first: asking for a file that is not there only fills the console with 404s
     const r = await fetch('models/sequences.json', { cache: 'no-store' });
     const list = r.ok ? await r.json() : [];
-    return list.length === 1 ? await tryGet(list[0].url) : null;
+    const ownName = decodeURIComponent(url.split('/').pop().split('?')[0]).replace(/\.[^.]+$/, '.sequence.json');
+    const own = list.find(s => s.name === ownName);
+    return own ? await tryGet(own.url) : list.length === 1 ? await tryGet(list[0].url) : null;
   } catch { return null; }
 }
 

@@ -27,7 +27,11 @@ export class MoveTool {
       e.value ? this.begin() : this.end();
     });
     tc.addEventListener('mouseDown', () => { this.usedGizmo = true; });
-    tc.addEventListener('objectChange', () => this.follow());
+    tc.addEventListener('objectChange', () => {
+      this.follow();
+      viewer.shadowDirty = true;
+      if (viewer.contact.enabled) { clearTimeout(this._bakeT); this._bakeT = setTimeout(() => viewer.contact.bake(), 250); }
+    });
     this.applySettings();
   }
 

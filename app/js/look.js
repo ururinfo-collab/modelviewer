@@ -1,6 +1,11 @@
 // Looks: render style + lighting, background, ground, ambient occlusion, exposure.
 // Each style brings sensible defaults; changes you make on top are remembered on this device.
 export const STYLES = {
+  presentation: {
+    label: 'Presentation', note: 'Sky light, reflective glass, soft ground shadow, outlines, straight verticals',
+    edges: [0x4a5058, 0.32], light: { hemi: 0.5, sun: 2.3 }, env: 0.8, envKind: 'sky', tone: true, bg: 'gradient', ground: 'none',
+    ao: 'always', shadows: true, contact: true, profile: true, fog: true, vignette: true, twoPoint: true,
+  },
   technical: {
     label: 'Technical', note: 'Model colours with crisp edge lines (BuildLapse look)',
     edges: [0x2c3238, 0.6], light: { hemi: 1.9, sun: 1.5 }, env: 0, tone: false, bg: 'light', ground: 'none', ao: false,
@@ -29,7 +34,7 @@ export const COLOURS = {
   natural: { label: 'Natural', sat: 1, hemi: 1, sun: 1 },
   vivid: { label: 'Vivid', sat: 1.35, hemi: 0.6, sun: 1.5 },
 };
-export const BACKGROUNDS ={ light: 'Light grey', white: 'White', sky: 'Sky', dark: 'Dark' };
+export const BACKGROUNDS = { gradient: 'Soft', light: 'Light grey', white: 'White', sky: 'Sky', dark: 'Dark' };
 export const GROUNDS = { none: 'None', grass: 'Grass', paving: 'Paving' };
 
 const KEY = 'mv:look';
@@ -42,7 +47,8 @@ export class Look {
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(KEY)) || {}; } catch { /* private mode */ }
     // own choices on top of the style: null = the style's default
-    this.state = { style: 'technical', bg: null, ground: null, ao: null, edges: null, exposure: 1, colours: 'vivid', ...saved };
+    this.state = { style: 'technical', bg: null, ground: null, ao: null, edges: null, exposure: 1, colours: 'vivid',
+      contact: null, twoPoint: null, ...saved };
     if (!STYLES[this.state.style]) this.state.style = 'technical';
     if (!COLOURS[this.state.colours]) this.state.colours = 'vivid';
   }
@@ -57,7 +63,10 @@ export class Look {
 
   get style() { return STYLES[this.state.style]; }
   // ambient occlusion costs a lot on phones: on by default only on computers
-  get ao() { return this.state.ao ?? (this.style.ao && DESKTOP); }
+  // (Presentation: on phones too, since there it is drawn only when the view rests)
+  get ao() { return this.state.ao ?? (this.style.ao === 'always' || (this.style.ao && DESKTOP)); }
+  get contact() { return this.state.contact ?? !!this.style.contact; }
+  get twoPoint() { return this.state.twoPoint ?? !!this.style.twoPoint; }
   get bg() { return this.state.bg ?? this.style.bg; }
   get ground() { return this.state.ground ?? this.style.ground; }
   get edges() { return this.state.edges ?? !!this.style.edges; }
@@ -72,16 +81,19 @@ export class Look {
     if (s.edges) v.setEdgeLook(s.edges[0], s.edges[1]);
     v.setEdges(this.edges);
     v.setLightLevels(this.lightLevels());
-    v.setEnvironment(s.env);
+    v.setEnvironment(s.env, s.envKind);
     v.setToneMapping(s.tone, this.state.exposure);
     v.setBackground(this.bg);
     v.setGround(this.ground);
     v.setAO(this.ao);
+    v.setProfile(!!s.profile);
+    v.setPresentation({ contact: this.contact, fog: !!s.fog, vignette: !!s.vignette });
+    v.setTwoPoint(this.twoPoint);
     document.body.classList.toggle('dark', this.bg === 'dark');
   }
 
   setStyle(name) {
-    this.state = { ...this.state, style: name, bg: null, ground: null, ao: null, edges: null };
+    this.state = { ...this.state, style: name, bg: null, ground: null, ao: null, edges: null, contact: null, twoPoint: null };
     this.apply();
     // Realistic comes with sun shadows; the others keep what the Sun panel has
     if (STYLES[name].shadows) {
@@ -99,6 +111,8 @@ export class Look {
     if (key === 'ao') v.setAO(value);
     if (key === 'edges') v.setEdges(value);
     if (key === 'exposure') v.setToneMapping(this.style.tone, value);
+    if (key === 'contact') v.contact.setEnabled(value);
+    if (key === 'twoPoint') v.setTwoPoint(value);
     if (key === 'colours') {
       v.saturation = this.colours.sat;
       v.setStyle(this.state.style);        // rebuilds the materials with the new saturation

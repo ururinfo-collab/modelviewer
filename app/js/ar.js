@@ -48,8 +48,12 @@ export class AR {
     this.placed = false;
     this.seen = false;
     this.saved = { bg: v.scene.background, edges: v.edges, ao: v.ao, shadows: v.shadows, ground: v.ground.visible,
-      surface: v.groundSurface.visible, controls: v.controls.enabled, cam: v.camera.position.clone(), target: v.controls.target.clone() };
+      surface: v.groundSurface.visible, controls: v.controls.enabled, cam: v.camera.position.clone(), target: v.controls.target.clone(),
+      fog: v.scene.fog, contact: v.contact.plane.visible, vignette: v.vignette };
     v.scene.background = null;
+    v.scene.fog = null;
+    v.contact.plane.visible = false;
+    v.vignette = null;
     v.setEdges(false);            // half the drawing work: phones in AR need the headroom
     v.ao = false;
     if (v.shadows) v.setShadows(false);
@@ -165,6 +169,9 @@ export class AR {
     this.reticle.geometry.dispose();
     r.xr.enabled = false;
     v.scene.background = s.bg;
+    v.scene.fog = s.fog;
+    v.contact.plane.visible = s.contact;
+    v.vignette = s.vignette;
     v.setEdges(s.edges);
     v.ao = s.ao;
     if (s.shadows) v.setShadows(true);

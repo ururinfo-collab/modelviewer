@@ -102,7 +102,8 @@ export function capturePasses(v) {
   const mode = v.viewMode;
   if (mode !== 'solid') v.setViewMode('solid');
   const saved = { pr: r.getPixelRatio(), aspect: cam.aspect, view: cam.view ? { ...cam.view } : null, bg: scene.background,
-    ground: v.ground.visible, surface: v.groundSurface.visible, surfaceMat: v.groundSurface.material };
+    ground: v.ground.visible, surface: v.groundSurface.visible, surfaceMat: v.groundSurface.material,
+    fog: scene.fog, contact: v.contact.plane.visible };
   const meshes = v.meshes.filter(m => m.visible);
   const mats = meshes.map(m => m.material);
   const lines = meshes.map(m => m.userData.line).filter(Boolean);
@@ -119,6 +120,7 @@ export function capturePasses(v) {
     cam.clearViewOffset();
     cam.aspect = W / H;
     cam.updateProjectionMatrix();
+    v.applyTwoPoint();                // the same straight verticals as on screen
     cam.updateMatrixWorld();
 
     // 1. the view as it looks now, without edge lines
@@ -131,7 +133,9 @@ export function capturePasses(v) {
     out.view = cv.toDataURL('image/png');
     out.viewJpeg = cv.toDataURL('image/jpeg', 0.92);
 
-    // 2. black lines on white
+    // 2. black lines on white (no haze, no ground shadow in the guide pictures)
+    scene.fog = null;
+    v.contact.plane.visible = false;
     scene.background = new THREE.Color(0xffffff);
     v.ground.visible = v.groundSurface.visible = false;
     for (const m of meshes) m.material = white;
@@ -162,6 +166,8 @@ export function capturePasses(v) {
     meshes.forEach((m, i) => { m.material = mats[i]; });
     lines.forEach((l, i) => { [l.material, l.visible] = lineState[i]; });
     scene.background = saved.bg;
+    scene.fog = saved.fog;
+    v.contact.plane.visible = saved.contact;
     v.ground.visible = saved.ground;
     v.groundSurface.visible = saved.surface;
     v.groundSurface.material = saved.surfaceMat;

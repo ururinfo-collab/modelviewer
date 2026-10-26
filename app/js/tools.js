@@ -319,6 +319,7 @@ export class WalkTool {
     this.placed = false;
     this.saved = { pos: v.camera.position.clone(), target: v.controls.target.clone(), fov: v.camera.fov };
     v.controls.enabled = false;
+    v.walking = true;           // look up and down freely: no straight-verticals correction
   }
 
   // stand on the tapped spot (or in front of the tapped wall)
@@ -345,6 +346,7 @@ export class WalkTool {
     this.active = false;
     v.tickers.delete(this.tick);
     v.controls.enabled = true;
+    v.walking = false;
     if (this.placed) {
       const fwd = v.camera.getWorldDirection(new THREE.Vector3());
       v.controls.target.copy(v.camera.position).addScaledVector(fwd, 4);

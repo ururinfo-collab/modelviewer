@@ -100,11 +100,20 @@ async function loadSkp(main, manager) {
   // every colour came out lighter and greyer than in SketchUp. Convert them as the SketchUp export does.
   const lin = c => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
   for (const m of json.materials || []) {
-    const f = m.pbrMetallicRoughness?.baseColorFactor;
-    if (Array.isArray(f)) for (let i = 0; i < 3; i++) f[i] = lin(f[i]);
+    const pbr = m.pbrMetallicRoughness, f = pbr?.baseColorFactor;
+    if (!Array.isArray(f)) continue;
+    // a textured material: openskp also writes SketchUp's average texture colour as a tint, and glTF multiplies
+    // the two, so textures (roof sheets) came out almost flat dark grey. The texture alone carries the colour.
+    if (pbr.baseColorTexture) f[0] = f[1] = f[2] = 1;
+    else for (let i = 0; i < 3; i++) f[i] = lin(f[i]);
   }
   const loaded = await loadGltf(main, writeGlbJson(glb, json), manager, INCH_ZUP_TO_M_YUP);
   loaded.kind = 'skp';
+  // a face with different front and back materials comes as two one-sided copies in the same place (front:
+  // e.g. the textured roof sheets, back: plain). They must stay one-sided, or the back copy shows through.
+  loaded.root.traverse(o => {
+    for (const m of [].concat(o.material || [])) if (m.side === THREE.FrontSide) m.userData.oneSided = true;
+  });
   return loaded;
 }
 

@@ -8,6 +8,8 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { ContactShadow, skyEnvironment, ProfileShader, Vignette } from './present.js';
 import { categorize } from './categories.js';
 import { autoStage } from './sequence.js';
 
@@ -31,6 +33,13 @@ export class Viewer extends EventTarget {
     r.setPixelRatio(this.pixelRatio);
     r.shadowMap.type = THREE.PCFSoftShadowMap;
     r.shadowMap.enabled = false;
+    // sun shadows are drawn again only when something changes (sun, what is shown, a moved part), not every
+    // frame of orbiting: costs nothing on phones once drawn
+    r.shadowMap.autoUpdate = false;
+    this.shadowDirty = true;
+    // phones: soft corners and outlines only once the view stops moving
+    this.postWhenStill = !matchMedia('(hover: hover) and (pointer: fine)').matches;
+    this._moved = 0;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(BG);
@@ -44,7 +53,7 @@ export class Viewer extends EventTarget {
     c.rotateSpeed = 0.8;
     c.zoomToCursor = true;
     c.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
-    c.addEventListener('change', () => { this.flyThrough(); this.requestRender(); });
+    c.addEventListener('change', () => { this._moved = performance.now(); this.flyThrough(); this.requestRender(); });
 
     this.hemi = new THREE.HemisphereLight(0xffffff, 0x9aa0a8, 1.9);
     this.sun = new THREE.DirectionalLight(0xffffff, 1.5);
@@ -97,6 +106,11 @@ export class Viewer extends EventTarget {
     this.pickables = [];
     this.raycaster = new THREE.Raycaster();
     this.clock = new THREE.Clock();
+    this.contact = new ContactShadow(this);
+    this.vignette = null;
+    this.profile = false;
+    this.twoPoint = false;
+    this.walking = false;
 
     new ResizeObserver(() => this.resize()).observe(canvas);
     this.resize();
@@ -136,19 +150,35 @@ export class Viewer extends EventTarget {
   // soft shadows in corners and under furniture (screen-space, GTAO); multisampled so edges stay smooth
   setAO(on) {
     this.ao = on;
-    if (on && !this.composer) {
+    this.ensureComposer();
+    this.requestRender();
+  }
+
+  // SketchUp-style heavy outlines (Presentation look); they read the soft-corner pass's depth buffer
+  setProfile(on) {
+    this.profile = on;
+    this.ensureComposer();
+    this.requestRender();
+  }
+
+  ensureComposer() {
+    if ((this.ao || this.profile) && !this.composer) {
       const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
       const c = this.composer = new EffectComposer(this.renderer, target);
       c.addPass(new RenderPass(this.scene, this.camera));
       this.gtao = new GTAOPass(this.scene, this.camera, 1, 1);
       this.gtao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.5, thickness: 1.5, scale: 1, samples: 16 });
       this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
-      this.gtao.blendIntensity = 1;
       c.addPass(this.gtao);
+      this.profilePass = new ShaderPass(ProfileShader);
+      c.addPass(this.profilePass);
       c.addPass(new OutputPass());
       this.sizeComposer();
     }
-    this.requestRender();
+    if (this.composer) {
+      this.gtao.blendIntensity = this.ao ? 1 : 0;
+      this.profilePass.enabled = this.profile;
+    }
   }
 
   sizeComposer() {
@@ -156,23 +186,83 @@ export class Viewer extends EventTarget {
     const w = Math.max(1, this.canvas.clientWidth), h = Math.max(1, this.canvas.clientHeight);
     this.composer.setPixelRatio(this.renderer.getPixelRatio());
     this.composer.setSize(w, h);
+    const pr = this.renderer.getPixelRatio();
+    this.profilePass.uniforms.resolution.value.set(w * pr, h * pr);
+    this.profilePass.uniforms.width.value = Math.max(1, pr * 0.9);
+  }
+
+  // Presentation look: soft ground shadow, haze toward the horizon, darker frame edges
+  setPresentation({ contact = false, fog = false, vignette = false } = {}) {
+    this.contact.setEnabled(contact);
+    this.scene.fog = fog ? new THREE.Fog(0xedefee, 1, 2) : null;
+    this.fitFog();
+    this.vignette = vignette ? (this._vignette ||= new Vignette()) : null;
+    this.requestRender();
+  }
+
+  // haze starts just beyond the far side of the model, wherever the camera is: only the distant ground fades
+  fitFog() {
+    if (!this.scene.fog || !this.sphere) return;
+    const d = this.camera.position.distanceTo(this.sphere.center), R = this.sphere.radius;
+    this.scene.fog.near = d + R * 1.2;
+    this.scene.fog.far = d + R * 7;
+  }
+
+  // keep upright lines upright (architectural photo, shift lens): the camera stays level and the picture
+  // shifts up or down instead of tilting. Fades out toward steep views (plans look right tilted).
+  applyTwoPoint() {
+    const cam = this.camera;
+    if (!this.twoPoint || this.walking || this.renderer.xr.isPresenting || !this.root) return;
+    const t = this.controls.target;
+    cam.lookAt(t);
+    const d = t.clone().sub(cam.position);
+    const pitch = Math.atan2(d.y, Math.hypot(d.x, d.z));
+    const a = pitch * (1 - THREE.MathUtils.smoothstep(Math.abs(pitch), 0.6, 0.9));
+    cam.updateProjectionMatrix();
+    if (Math.abs(a) < 1e-4) return;
+    cam.rotateX(-a);
+    cam.updateMatrixWorld();
+    cam.projectionMatrix.elements[9] += Math.tan(a) / Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
+    cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
+  }
+
+  setTwoPoint(on) {
+    this.twoPoint = on;
+    if (!on) { this.camera.lookAt(this.controls.target); this.camera.updateProjectionMatrix(); }
+    this.requestRender();
   }
 
   // image-based light from a neutral studio room: gives PBR materials their sheen and soft fill
-  setEnvironment(intensity) {
-    if (intensity > 0 && !this.envTex) {
+  // kind: room (neutral studio) | sky (blue sky, bright horizon, ground bounce)
+  setEnvironment(intensity, kind = 'room') {
+    if (intensity > 0 && kind === 'room' && !this.envTex) {
       const pmrem = new THREE.PMREMGenerator(this.renderer);
       this.envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
       pmrem.dispose();
     }
-    this.scene.environment = intensity > 0 ? this.envTex : null;
+    if (intensity > 0 && kind === 'sky' && !this.skyEnvTex) this.skyEnvTex = skyEnvironment(this.renderer);
+    this.scene.environment = intensity > 0 ? (kind === 'sky' ? this.skyEnvTex : this.envTex) : null;
     this.scene.environmentIntensity = intensity;
     this.requestRender();
   }
 
   setBackground(kind) {
     this.backgroundKind = kind;
-    if (kind === 'sky') {
+    if (kind === 'gradient') {
+      if (!this.gradTex) {
+        const cv = document.createElement('canvas');
+        cv.width = 2; cv.height = 256;
+        const g = cv.getContext('2d'), grad = g.createLinearGradient(0, 0, 0, 256);
+        grad.addColorStop(0, '#cfdbe6');
+        grad.addColorStop(0.5, '#e9eef2');
+        grad.addColorStop(1, '#f3f2ee');
+        g.fillStyle = grad;
+        g.fillRect(0, 0, 2, 256);
+        this.gradTex = new THREE.CanvasTexture(cv);
+        this.gradTex.colorSpace = THREE.SRGBColorSpace;
+      }
+      this.scene.background = this.gradTex;
+    } else if (kind === 'sky') {
       if (!this.skyTex) {
         const cv = document.createElement('canvas');
         cv.width = 2; cv.height = 256;
@@ -269,6 +359,12 @@ export class Viewer extends EventTarget {
     }
     for (const t of [...this.tickers]) t(dt);
     if (this.controls.enabled) this.controls.update(dt);
+    if (this.tickers.size || this.continuous > 0) this._moved = performance.now();
+    // phones: once the view has rested, draw it once more with soft corners and outlines
+    if (this._postPending && !this.needsRender && performance.now() - this._moved > 220) {
+      this._postPending = false;
+      this.needsRender = true;
+    }
     if (this.needsRender || this.tickers.size || this.continuous > 0) {
       this.needsRender = false;
       this.render();
@@ -276,9 +372,25 @@ export class Viewer extends EventTarget {
   }
 
   render() {
-    // ambient occlusion only on solid views (it would darken see-through glass)
-    if (this.ao && this.composer && this.viewMode === 'solid') this.composer.render();
-    else this.renderer.render(this.scene, this.camera);
+    const r = this.renderer;
+    this.applyTwoPoint();
+    this.fitFog();
+    // sun shadows: redraw the shadow map only when something changed (also when a section cut moved)
+    if (this.shadows) {
+      const clipKey = r.clippingPlanes.map(p => p.constant.toFixed(3) + p.normal.toArray().join()).join('|');
+      if (this.shadowDirty || clipKey !== this._clipKey || this.tickers.size || this.continuous > 0) r.shadowMap.needsUpdate = true;
+      this.shadowDirty = false;
+      this._clipKey = clipKey;
+    }
+    // soft corners and outlines only on solid views (they would darken see-through glass)
+    const post = (this.ao || this.profile) && this.composer && this.viewMode === 'solid';
+    const moving = this.postWhenStill && performance.now() - this._moved < 200;
+    if (post && !moving) this.composer.render();
+    else {
+      r.render(this.scene, this.camera);
+      if (post) this._postPending = true;
+    }
+    this.vignette?.draw(r);
     for (const f of this.afterRender) f();
   }
 
@@ -316,8 +428,10 @@ export class Viewer extends EventTarget {
     this.groundSurface.position.set(this.sphere.center.x, gy - 0.02, this.sphere.center.z);
     this.groundSurface.scale.setScalar(R * 12);
     this.setSunDir(this.sunDir);
+    this.fitFog();
     this.updateVisibility();
     this.fitAll(false);
+    this.contact.bake();
     this.dispatchEvent(new Event('model'));
   }
 
@@ -530,14 +644,20 @@ export class Viewer extends EventTarget {
       const hsl = color.getHSL({}, THREE.SRGBColorSpace);
       color.setHSL(hsl.h, Math.min(1, hsl.s * this.saturation), hsl.l, THREE.SRGBColorSpace);
     }
-    const common = { name: src.name, side: THREE.DoubleSide, transparent: glass, opacity,
+    const common = { name: src.name, side: src.userData?.oneSided ? THREE.FrontSide : THREE.DoubleSide, transparent: glass, opacity,
       polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 };
     switch (this.style) {
       case 'clay':        // architectural white model; glass stays a pale tint
         return new THREE.MeshLambertMaterial({ ...common, color: glass ? 0xdde7ee : 0xf1eee8 });
       case 'sketch':      // white paper, the edge lines do the drawing
         return new THREE.MeshBasicMaterial({ ...common, color: glass ? 0xeef4f8 : 0xffffff });
+      case 'presentation':
       case 'realistic':   // physically based: sky light, sheen on glass and metal
+        // glass: tinted, reflects the sky (the surest sign of a model rather than a building is flat glass)
+        if (glass) {
+          return new THREE.MeshStandardMaterial({ ...common, color: color.clone().lerp(new THREE.Color(0x4f6577), 0.55),
+            opacity: Math.max(opacity, 0.5), roughness: 0.04, metalness: 0.25, envMapIntensity: 2.2 });
+        }
         return new THREE.MeshStandardMaterial({ ...common, color, map: src.map || null,
           roughness: glass ? 0.05 : /metal|steel|alu|chrome|inox|ss\b/i.test(src.name || '') ? 0.35 : 0.85,
           metalness: /metal|steel|alu|chrome|inox|ss\b/i.test(src.name || '') ? 0.6 : 0 });
@@ -576,6 +696,7 @@ export class Viewer extends EventTarget {
   }
 
   refreshMaterials() {
+    this.shadowDirty = true;
     for (const m of this.meshes) this.applyMaterial(m);
     this.requestRender();
   }
@@ -620,6 +741,7 @@ export class Viewer extends EventTarget {
     sc.near = 0.1;
     sc.far = S.radius * 4;
     sc.updateProjectionMatrix();
+    this.shadowDirty = true;
     this.requestRender();
   }
 
@@ -639,6 +761,9 @@ export class Viewer extends EventTarget {
     };
     visit(this.rootEnt, false, false);
     this.pickables = this.meshes.filter(m => m.visible && m.userData.owner.obj.visible && this.chainVisible(m));
+    this.shadowDirty = true;
+    // the ground shadow follows what is shown, once things settle (not every frame of a build animation)
+    if (this.contact.enabled) { clearTimeout(this._bakeT); this._bakeT = setTimeout(() => this.contact.bake(), 250); }
     this.requestRender();
     if (!quiet) this.dispatchEvent(new Event('visibility'));
   }
