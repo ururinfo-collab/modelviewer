@@ -16,9 +16,7 @@
 <script type="importmap">
 { "imports": { "three": "./vendor/three/build/three.module.min.js", "three/addons/": "./vendor/three/examples/jsm/",
   "openskp": "./vendor/openskp/openskp.mjs", "earcut": "./vendor/openskp/earcut.mjs",
-  "fflate": "./vendor/openskp/fflate.mjs", "flatbuffers": "./vendor/openskp/flatbuffers.mjs",
-  "three/examples/jsm/": "./vendor/three/examples/jsm/",
-  "three-gpu-pathtracer": "./vendor/pathtracer/src/index.js", "three-mesh-bvh": "./vendor/three-mesh-bvh/src/index.js" } }
+  "fflate": "./vendor/openskp/fflate.mjs", "flatbuffers": "./vendor/openskp/flatbuffers.mjs" } }
 </script>
 <script type="module" src="js/main.js"></script>
 </head>
@@ -49,7 +47,6 @@
   <button data-tool="build" data-icon="build"><span>Build</span></button>
   <button data-tool="xray" data-icon="xray"><span>See-thru</span></button>
   <button data-tool="look" data-icon="palette"><span>Look</span></button>
-  <button data-tool="render" data-icon="sparkle"><span>Render</span></button>
   <button data-tool="sun" data-icon="sun"><span>Sun</span></button>
   <button data-tool="shot" data-icon="camera"><span>Photo</span></button>
   <button data-tool="record" data-icon="record"><span>Record</span></button>
@@ -108,18 +105,6 @@
 
   <div id="viewMenu" class="menu glass" hidden></div>
 
-  <div id="renderbar" class="bar glass" hidden>
-    <div class="barname"><span id="renderStatus">Photoreal render</span></div>
-    <div class="pbar rbar"><i id="renderProgress"></i></div>
-    <div class="seg sm" id="renderLight"></div>
-    <div class="seg sm" id="renderQuality"></div>
-    <div class="seg sm" id="renderSize"></div>
-    <div class="baracts">
-      <button data-rb="save" data-icon="save"><span>Save</span></button>
-      <button data-rb="done" data-icon="close"><span>Done</span></button>
-    </div>
-  </div>
-
   <div id="measurebar" class="bar glass" hidden>
     <div class="barname"><span id="measureHint">Tap two points. Corners snap.</span></div>
     <div class="baracts">
@@ -143,6 +128,13 @@
   </div>
 </div>
 
+<div id="hoverTip" hidden></div>
+<div id="ctxMenu" class="menu glass" hidden></div>
+<button id="compass" class="glass" title="North. Click for the top view" hidden>
+  <svg viewBox="0 0 40 40" width="40" height="40"><g id="compassNeedle"><path d="M20 5l6 15h-12z" fill="#d23c2c"/><path d="M20 35l-6-15h12z" fill="#8a9097"/></g><text x="20" y="13" text-anchor="middle" font-size="0" fill="#fff">N</text></svg>
+  <span>N</span>
+</button>
+
 <div id="rec" class="glass" hidden><i></i><span id="recTime">0:00</span><button id="recStop" class="ib sm" data-icon="stop" title="Stop recording"></button></div>
 <div id="toast"></div>
 
@@ -155,7 +147,7 @@
     <div id="wRecent" hidden><h3>On this phone</h3><ul id="recentList"></ul></div>
     <p class="help">Open a .skp straight from Files, Drive or WhatsApp. For the geo-location and hidden objects in scenes, use SketchUp › Extensions › Model Viewer › Export (.glb).</p>
     <p class="help" id="wDrop">On a computer you can also drop files here.</p>
-    <p class="help">Version 1.8.0</p>
+    <p class="help">Version 1.9.0</p>
   </div>
 </div>
 

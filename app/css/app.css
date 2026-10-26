@@ -92,11 +92,6 @@ input, select { font: inherit; color: inherit; }
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Myanmar", "Myanmar Text", "Myanmar Sangam MN", sans-serif; }
 #buildRange { width: calc(100% - 16px); margin: 4px 8px 0; accent-color: var(--orange); height: 28px; }
 
-#renderbar .seg { margin: 4px 6px; }
-.seg.sm button { height: 28px; font-size: 12.5px; }
-.pbar.rbar { margin: 2px 8px 4px; }
-.pbar.rbar i { background: var(--orange); }
-
 .menu { border-radius: 14px; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
 .menu .omtitle { font-weight: 600; padding: 6px 10px 2px; }
 .menu button { text-align: left; padding: 10px 12px; border-radius: 10px; }
@@ -151,6 +146,20 @@ table.info td:first-child { color: var(--ink2); width: 34%; padding-right: 8px; 
 .walkbtns button svg { color: var(--ink); }
 .walkbtns button.on, .walkbtns button.on svg { color: var(--accent); }
 body.walking #tools, body.walking #scenesWrap, body.walking #dock { display: none; }
+
+/* ---- computer extras: hover name, right-click menu, north arrow ---- */
+#hoverTip { position: fixed; z-index: 9; pointer-events: none; background: rgba(31,38,45,.88); color: #fff; font-size: 12.5px;
+  padding: 3px 8px; border-radius: 6px; white-space: nowrap; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; }
+#hoverTip small { opacity: .7; margin-left: 6px; }
+#ctxMenu { position: fixed; z-index: 21; min-width: 210px; }
+#ctxMenu button { padding: 8px 12px; }
+#ctxMenu hr { border: 0; border-top: 1px solid var(--line); margin: 3px 6px; }
+#compass { position: fixed; z-index: 5; right: calc(12px + var(--sar)); top: calc(110px + var(--sat)); width: 48px; height: 56px;
+  border-radius: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2px 0 0; }
+#compass span { font-size: 10px; font-weight: 700; color: #d23c2c; line-height: 1; }
+#compassNeedle { transform-origin: 20px 20px; transition: transform .08s linear; }
+@media (orientation: landscape) { #compass { top: calc(8px + var(--sat)); right: auto; left: calc(82px + var(--sal) + min(420px, 40vw)); height: 48px; } }
+body.walking #compass { display: none; }
 
 /* ---- recording, toast ---- */
 #rec { position: fixed; top: calc(62px + var(--sat)); left: 50%; transform: translateX(-50%); z-index: 8; display: flex; align-items: center;

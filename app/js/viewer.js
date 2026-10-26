@@ -48,7 +48,9 @@ export class Viewer extends EventTarget {
     this.hemi = new THREE.HemisphereLight(0xffffff, 0x9aa0a8, 1.9);
     this.sun = new THREE.DirectionalLight(0xffffff, 1.5);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    // sharper sun shadows on computers; phones keep the lighter map
+    const big = matchMedia('(hover: hover) and (pointer: fine)').matches ? 4096 : 2048;
+    this.sun.shadow.mapSize.set(big, big);
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.03;
     this.scene.add(this.hemi, this.sun, this.sun.target);
@@ -267,8 +269,7 @@ export class Viewer extends EventTarget {
 
   render() {
     // ambient occlusion only on solid views (it would darken see-through glass)
-    if (this.renderOverride) this.renderOverride();       // photoreal render in progress
-    else if (this.ao && this.composer && this.viewMode === 'solid') this.composer.render();
+    if (this.ao && this.composer && this.viewMode === 'solid') this.composer.render();
     else this.renderer.render(this.scene, this.camera);
     for (const f of this.afterRender) f();
   }

@@ -55,6 +55,10 @@ After moving this folder, run `python sketchup/build.py` and reinstall (the .rbz
 
 ## Using it
 
+**On a computer:** hovering shows the object's name with a blue box; right-click opens its menu (info, zoom, hide,
+isolate, see-through, move, select group, fit, top view); a right-drag still pans. The north arrow by the title
+turns with the view; click it for the top view.
+
 **Gestures:** one finger orbits, two fingers pinch-zoom and pan, double-tap a point to orbit around it.
 Tap an object to select it; tap it again to go one level deeper (chair › chair leg); ↑ selects the group it sits in.
 Parts exported loose (each chair leg its own group, as in Rev05) are grouped back by name: "Dining chair 1 seat",

@@ -435,7 +435,6 @@ function exitTools() {
   if (app.tool === 'walk') { app.walk.exit(); document.body.classList.remove('walking'); $('#walkui').hidden = true; updateInset(); }
   if (app.tool === 'move') app.move.stop();
   if (app.tool === 'build') app.seq.stop();
-  if (app.tool === 'render') { clearInterval(renderTimer); app.photo.stop(); }
   app.tool = null;
   updateBars();
   setToolButtons();
@@ -495,13 +494,6 @@ $('#tools').onclick = async e => {
     const s = app.seq;
     return toast(s.data ? `Build order from ${s.data.model || 'file'}: ${s.stages.length} stages${s.unmatched ? `, ${s.unmatched} new parts placed by type` : ''}`
                         : `Automatic build order: ${s.stages.length} stages`, 3200);
-  }
-  if (t === 'render') {
-    if (app.tool === 'render') return exitTools();
-    exitTools();
-    app.panels.close();
-    $('#viewMenu').hidden = true;
-    return startRender();
   }
   if (t === 'xray') {
     const menu = $('#viewMenu');
@@ -610,59 +602,6 @@ $('#buildbar').onclick = e => {
   if (a === 'order') return showOrderMenu();
   if (a === 'done') exitTools();
   updateBuildBar();
-};
-
-// ---- photoreal render ------------------------------------------------------------
-
-let renderTimer, renderMod;
-async function startRender() {
-  if (!app.photo) {
-    busy('Loading the renderer', 0.3);
-    try {
-      renderMod = await import('./render.js');      // loaded only when first used
-      app.photo = new renderMod.PhotoRender(app);
-      app.photo.onStatus = msg => { if (msg) $('#renderStatus').textContent = msg; };
-      app.photo.onDone = () => toast('Render finished. Save it, or move the view to render another.', 4000);
-      app.photo.onBusy = on => (on ? busy('Preparing the scene for rendering (a few seconds)', 0.5) : busy(false));
-    } catch (e) {
-      busy(false);
-      return alert(`Could not load the renderer: ${e.message}`);
-    } finally { busy(false); }
-  }
-  setTool('render');
-  buildRenderBar();
-  renderTimer = setInterval(updateRenderStatus, 250);
-  if (matchMedia('(hover: none)').matches) toast('Rendering works on phones but is much faster on a computer.', 4000);
-  try { await app.photo.start(); } catch (e) { console.error(e); alert(`Render failed: ${e.message}`); exitTools(); }
-}
-
-function buildRenderBar() {
-  const p = app.photo;
-  const seg = (id, opts, cur, key) => {
-    $(id).innerHTML = Object.entries(opts).map(([k, o]) =>
-      `<button data-ro="${key}" data-val="${k}" class="${cur === k ? 'on' : ''}" title="${esc(o.note || '')}">${o.label}</button>`).join('');
-  };
-  seg('#renderLight', renderMod.LIGHTS, p.light, 'light');
-  seg('#renderQuality', renderMod.QUALITY, p.quality, 'quality');
-  seg('#renderSize', renderMod.SIZES, p.size, 'size');
-}
-
-function updateRenderStatus() {
-  const p = app.photo;
-  if (!p?.active) return;
-  if (p.ready) {
-    const n = Math.min(p.samples, p.target);
-    $('#renderStatus').textContent = p.done ? `Done: ${p.target} samples` : `Rendering: ${n} / ${p.target} samples`;
-    $('#renderProgress').style.width = `${Math.round(n / p.target * 100)}%`;
-  }
-}
-
-$('#renderbar').onclick = async e => {
-  const o = e.target.closest('[data-ro]');
-  if (o) { app.photo.setOption(o.dataset.ro, o.dataset.val); return buildRenderBar(); }
-  const a = e.target.closest('[data-rb]')?.dataset.rb;
-  if (a === 'save') showSave($('#saveDlg'), await app.photo.save());
-  if (a === 'done') exitTools();
 };
 
 // ---- see-through views: Solid / See inside / X-ray -------------------------------
@@ -794,7 +733,6 @@ function updateBars() {
   $('#movebar').hidden = t !== 'move';
   $('#measurebar').hidden = t !== 'measure';
   $('#buildbar').hidden = t !== 'build';
-  $('#renderbar').hidden = t !== 'render';
   if (t) $('#viewMenu').hidden = true;
   if (t !== 'build') $('#orderMenu').hidden = true;
   if (E) $('#selName').textContent = E.name;
@@ -823,7 +761,13 @@ $('#selUp').onclick = () => {
 };
 
 $('#selbar').onclick = e => {
-  const a = e.target.closest('[data-sel]')?.dataset.sel, E = viewer.selected;
+  const a = e.target.closest('[data-sel]')?.dataset.sel;
+  if (a) selAction(a);
+};
+
+// what the selection bar and the right-click menu do with the selected object
+function selAction(a) {
+  const E = viewer.selected;
   if (!a || !E) return;
   if (a === 'info') { app.panels.open('info'); setToolButtons(); }
   if (a === 'zoom') viewer.zoomTo(E);
@@ -844,8 +788,119 @@ $('#selbar').onclick = e => {
     updateBars();
   }
   if (a === 'move') { app.panels.close(); setTool('move'); app.move.start(E); updateBars(); toast('Drag the arrows. Rotate and Up/down below.'); }
+  if (a === 'up' && E.parent && E.parent !== viewer.rootEnt && E.parent !== viewer.top) viewer.select(E.parent);
   if (a === 'close') viewer.select(null);
+}
+
+// the object a tap at this hit would select (whole object first, then one level deeper)
+function tapTarget(h) {
+  const chain = viewer.chain(h.object.userData.owner);
+  const i = chain.indexOf(viewer.selected);
+  return i < 0 ? chain[0] : chain[Math.min(i + 1, chain.length - 1)];
+}
+
+// ---- computer extras: hover name + box, right-click menu ----------------------
+
+const MOUSE = matchMedia('(hover: hover) and (pointer: fine)').matches;
+const hoverBox = new THREE.Box3Helper(new THREE.Box3(), 0x2f6fe0);
+hoverBox.visible = false;
+hoverBox.raycast = () => {};
+viewer.scene.add(hoverBox);
+let hoverE = null, hoverQueued = null;
+
+function hideHover() {
+  $('#hoverTip').hidden = true;
+  if (hoverBox.visible) { hoverBox.visible = false; viewer.requestRender(); }
+  hoverE = null;
+}
+
+function updateHover(x, y) {
+  hoverQueued = null;
+  if (!viewer.root || app.tool || ptrs.size || !$('#ctxMenu').hidden) return hideHover();
+  const h = viewer.pick(x, y);
+  const E = h ? tapTarget(h) : null;
+  if (!E) return hideHover();
+  const tip = $('#hoverTip');
+  if (E !== hoverE) {
+    hoverE = E;
+    tip.innerHTML = `${esc(E.name)}<small>${esc((E.tag || '').split(' ')[0])}</small>`;
+    hoverBox.box.copy(viewer.entityBox(E));
+    hoverBox.visible = E !== viewer.selected;
+    viewer.requestRender();
+  }
+  tip.hidden = false;
+  tip.style.left = `${Math.min(x + 14, innerWidth - tip.offsetWidth - 8)}px`;
+  tip.style.top = `${y + 18}px`;
+}
+
+if (MOUSE) {
+  viewer.canvas.addEventListener('pointermove', e => {
+    if (e.pointerType !== 'mouse' || e.buttons) return hideHover();
+    if (!hoverQueued) hoverQueued = requestAnimationFrame(() => updateHover(e.clientX, e.clientY));
+  });
+  viewer.canvas.addEventListener('pointerleave', hideHover);
+  viewer.canvas.addEventListener('pointerdown', hideHover);
+  viewer.addEventListener('select', () => { if (hoverE === viewer.selected) hideHover(); });
+}
+
+// right-click: the object's actions at the pointer (a right-drag pans the view instead)
+let rightDown = null;
+viewer.canvas.addEventListener('pointerdown', e => { if (e.button === 2) rightDown = { x: e.clientX, y: e.clientY }; });
+viewer.canvas.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  const moved = rightDown && Math.hypot(e.clientX - rightDown.x, e.clientY - rightDown.y) > 5;
+  rightDown = null;
+  if (moved || !viewer.root || app.tool) return;
+  const h = viewer.pick(e.clientX, e.clientY);
+  if (h) viewer.select(tapTarget(h));
+  const E = viewer.selected && h ? viewer.selected : null;
+  const item = (act, label, extra = '') => `<button data-cx="${act}"><b>${label}</b>${extra ? `<small>${extra}</small>` : ''}</button>`;
+  let m = '';
+  if (E) {
+    m += `<div class="omtitle">${esc(E.name)}</div>` + item('info', 'Info') + item('zoom', 'Zoom to it') + item('hide', 'Hide') +
+      item('isolate', viewer.isolated?.has(E) ? 'Exit isolate' : 'Isolate (hide everything else)') +
+      item('ghost', E.ghost ? 'Make solid' : 'See-through') + item('move', 'Move / rotate');
+    if (E.parent && E.parent !== viewer.rootEnt && E.parent !== viewer.top) m += item('up', 'Select the group it is in', E.parent.name);
+    m += '<hr>';
+  }
+  if (hiddenCount() || viewer.isolated) m += item('showall', 'Show everything');
+  m += item('fit', 'Fit the whole model') + item('top', 'Top view');
+  const menu = $('#ctxMenu');
+  menu.innerHTML = m;
+  menu.hidden = false;
+  menu.style.left = `${Math.min(e.clientX, innerWidth - menu.offsetWidth - 8)}px`;
+  menu.style.top = `${Math.min(e.clientY, innerHeight - menu.offsetHeight - 8)}px`;
+  hideHover();
+});
+$('#ctxMenu').onclick = e => {
+  const a = e.target.closest('[data-cx]')?.dataset.cx;
+  if (!a) return;
+  $('#ctxMenu').hidden = true;
+  if (a === 'showall') { app.history.record('Show everything'); viewer.showAll(); }
+  else if (a === 'fit') viewer.fitAll();
+  else if (a === 'top') stdView('top');
+  else selAction(a);
 };
+addEventListener('pointerdown', e => { if (!e.target.closest('#ctxMenu')) $('#ctxMenu').hidden = true; }, true);
+
+// ---- north arrow -----------------------------------------------------------------
+
+// the needle shows where north lies relative to the direction you are looking (top view: screen up)
+const north = new THREE.Vector3(), ahead = new THREE.Vector3();
+viewer.afterRender.add(() => {
+  const c = $('#compass');
+  c.hidden = !viewer.root;
+  if (!viewer.root) return;
+  const n = THREE.MathUtils.degToRad(app.panels.sunState?.north || 0);
+  north.copy(viewer.srcDir([Math.sin(n), Math.cos(n), 0])).setY(0).normalize();
+  viewer.camera.getWorldDirection(ahead).setY(0);
+  if (ahead.lengthSq() < 1e-4) ahead.set(0, 1, 0).applyQuaternion(viewer.camera.quaternion).setY(0);
+  ahead.normalize();
+  const cross = ahead.z * north.x - ahead.x * north.z, dot = ahead.dot(north);
+  const deg = -THREE.MathUtils.radToDeg(Math.atan2(cross, dot));
+  $('#compassNeedle').style.transform = `rotate(${deg.toFixed(1)}deg)`;
+});
+$('#compass').onclick = () => stdView('top');
 
 app.move.onChange = () => { updateBars(); if (app.panels.name === 'info') app.panels.render('info'); };
 $('#movebar').onclick = e => {
@@ -971,7 +1026,7 @@ function onTap(x, y) {
     return;
   }
   if (t === 'measure') return app.measure.onTap(x, y);
-  if (t === 'build' || t === 'render') return;     // nothing to pick while these run
+  if (t === 'build') return;           // the build plays; nothing to pick
   if (t === 'sectionPick') {
     const h = viewer.pick(x, y);
     if (h) { app.section.set('face', h); setTool(null); if (app.panels.name === 'section') app.panels.render('section'); }
@@ -1021,7 +1076,7 @@ function updateInset() {
   const w = innerWidth, h = innerHeight;
   // the panel and the tool bars take screen room; the small selection bar does not count, so
   // selecting does not shift the view
-  const blocks = ['#panel', '#buildbar', '#measurebar', '#movebar', '#renderbar'].map(s => $(s)).filter(el => !el.hidden);
+  const blocks = ['#panel', '#buildbar', '#measurebar', '#movebar'].map(s => $(s)).filter(el => !el.hidden);
   if (document.body.classList.contains('walking')) viewer.setInset(0, 0);
   else if (matchMedia('(orientation: landscape)').matches) {
     const left = $('#tools').getBoundingClientRect().right;
@@ -1034,7 +1089,7 @@ function updateInset() {
   }
 }
 new ResizeObserver(updateInset).observe($('#dock'));
-for (const s of ['#panel', '#buildbar', '#measurebar', '#movebar', '#renderbar']) {
+for (const s of ['#panel', '#buildbar', '#measurebar', '#movebar']) {
   new MutationObserver(updateInset).observe($(s), { attributes: true, attributeFilter: ['hidden'] });
 }
 addEventListener('resize', updateInset);
