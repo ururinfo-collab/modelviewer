@@ -11,6 +11,7 @@ import { Compare } from './compare.js';
 import { Notes, shrinkPhoto } from './notes.js';
 import { AR, arSupported, SCALES } from './ar.js';
 import { AIRender } from './ai.js';
+import { Share } from './share.js';
 import { screenshot, Recorder, showSave } from './capture.js';
 import { saveRecent, listRecent, getRecent, deleteRecent, getSetting, setSetting } from './store.js';
 import { Panels, esc } from './panels.js';
@@ -121,6 +122,8 @@ async function openFiles(files, keep = true) {
     app.compare.stop();
     await viewer.setModel(loaded, f => busy(null, 0.1 + f * 0.9));
     app.loaded = loaded;
+    // what a client link uploads (an order goes separately, the one Build uses)
+    app.sourceFiles = app.client ? null : [main, ...files.filter(f => f !== main && !/\.sequence\.json$/i.test(f.name))];
     if (loaded.sequence) keepOrder(loaded.sequence);    // opened together with the model: keep it too
     app.move = resetMove();
     app.history.clear();
@@ -209,6 +212,7 @@ addEventListener('dragleave', () => $('#welcome').classList.remove('drag'));
 addEventListener('drop', e => {
   e.preventDefault();
   $('#welcome').classList.remove('drag');
+  if (app.client) return;
   openFiles([...e.dataTransfer.files].map(f => ({ name: f.name, blob: f })));
 });
 
@@ -468,7 +472,7 @@ $('#tools').onclick = async e => {
   if (!b) return;
   const t = b.dataset.tool;
   if (!viewer.root && t !== 'settings') return toast('Open a model first');
-  if (['layers', 'tree', 'section', 'sun', 'settings', 'look', 'qty', 'compare', 'notes', 'ai'].includes(t)) {
+  if (['layers', 'tree', 'section', 'sun', 'settings', 'look', 'qty', 'compare', 'notes', 'ai', 'share'].includes(t)) {
     if (app.tool === 'walk' || app.tool === 'measure' || app.tool === 'build') exitTools();
     return togglePanel(t);
   }
@@ -686,6 +690,8 @@ function chosenOrder() {
   return best;
 }
 
+app.chosenOrder = chosenOrder;
+
 function useOrder(name) {
   const s = app.seq;
   setSetting(viewer.modelName, 'order', name);
@@ -868,7 +874,9 @@ function showNoteDlg(draft, text) {
   $('#notePhoto').innerHTML = draft.photo ? `<img src="${draft.photo}" alt="">` : '';
   $('#noteDlg [data-nd=nophoto]').hidden = !draft.photo;
   $('#noteDlg [data-nd=go]').hidden = !draft.id;
-  $('#noteDlg [data-nd=delete]').hidden = !draft.id;
+  $('#noteDlg [data-nd=delete]').hidden = !draft.id || !!app.client;
+  $('#noteText').readOnly = !!app.client;
+  $('#noteDlg [data-nd=close]').textContent = app.client ? 'Close' : 'Cancel';
   $('#noteDlg').hidden = false;
   if (!draft.id) setTimeout(() => $('#noteText').focus(), 50);
 }
@@ -888,6 +896,7 @@ $('#noteDlg').onclick = async e => {
   const a = e.target.closest('[data-nd]')?.dataset.nd;
   if (!a) return;
   const N = app.notes, d = noteDraft;
+  if (app.client && ['photo', 'nophoto', 'delete', 'save'].includes(a)) return;
   if (a === 'photo') return $('#notePhotoFile').click();
   if (a === 'nophoto') { d.photo = null; $('#notePhoto').innerHTML = ''; e.target.closest('button').hidden = true; return; }
   if (a === 'go') { N.go(d.id); }
@@ -1006,7 +1015,7 @@ function selAction(a) {
     viewer.setGhost(E, !E.ghost);
     updateBars();
   }
-  if (a === 'move') { app.panels.close(); setTool('move'); app.move.start(E); updateBars(); toast('Drag the arrows. Rotate and Up/down below.'); }
+  if (a === 'move' && !app.client) { app.panels.close(); setTool('move'); app.move.start(E); updateBars(); toast('Drag the arrows. Rotate and Up/down below.'); }
   if (a === 'up' && E.parent && E.parent !== viewer.rootEnt && E.parent !== viewer.top) viewer.select(E.parent);
   if (a === 'close') viewer.select(null);
 }
@@ -1367,7 +1376,35 @@ if ('launchQueue' in window) {
   });
 }
 
+// ---- client links: Lucie shares a view-only copy; the client opens #view=<id>.<secret> ----------------
+
+app.share = new Share(app);
+
+async function openShare({ id, token }) {
+  $('#welcome').hidden = true;
+  busy('Opening the shared model', 0.02);
+  try {
+    const s = await app.share.open(id, token, f => busy('Downloading the model', f));
+    app.client = s.manifest;
+    app.notes.readOnly = s.manifest.notes || [];
+    document.body.classList.add('client');
+    await openFiles(s.files, false);
+    if (!viewer.root) return;
+    if (s.title) { $('#title').textContent = s.title; document.title = s.title; }
+    const until = new Date(s.expires).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    $('#title').title = `View only. This link works until ${until}`;
+    toast(`View only · link valid until ${until}`, 4000);
+  } catch (e) {
+    busy(false);
+    $('#welcome .wbox').innerHTML = `<h1>Model Viewer</h1><p class="sub">${esc(e.message)}</p>` +
+      '<p class="help">Shared models are opened with the link the architect sent you.</p>';
+    $('#welcome').hidden = false;
+  }
+}
+
 (async () => {
+  const link = Share.fromHash();
+  if (link) return openShare(link);
   const q = new URLSearchParams(location.search);
   if (q.has('shared')) {
     history.replaceState(null, '', location.pathname);

@@ -188,6 +188,17 @@ body.walking #tools, body.walking #scenesWrap, body.walking #dock { display: non
 .aicmp b.l { left: 8px; } .aicmp b.r { right: 8px; }
 #aiDlg .sacts { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
 
+/* ---- client links ---- */
+.shlink { background: rgba(47,111,224,.08); border-radius: 12px; padding: 8px; margin: 8px 0; }
+.shlink input { width: 100%; min-width: 0; font-size: 12.5px; -webkit-user-select: text; user-select: text; }
+#shCode, #shTitle { width: 100%; min-width: 0; }
+/* a client's view-only copy: nothing that changes or opens files */
+body.client #btnOpen, body.client [data-tool=compare], body.client [data-tool=qty], body.client [data-tool=ai],
+body.client [data-tool=share], body.client [data-sel=move], body.client [data-cx=move],
+body.client #noteDlg [data-nd=photo], body.client #noteDlg [data-nd=nophoto], body.client #noteDlg [data-nd=save] { display: none !important; }
+body.client #title::after { content: 'View only'; margin-left: 8px; font-size: 11px; font-weight: 600; color: #fff; background: var(--accent);
+  padding: 2px 7px; border-radius: 8px; vertical-align: 2px; }
+
 /* ---- computer extras: hover name, right-click menu, north arrow ---- */
 #hoverTip { position: fixed; z-index: 9; pointer-events: none; background: rgba(31,38,45,.88); color: #fff; font-size: 12.5px;
   padding: 3px 8px; border-radius: 6px; white-space: nowrap; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; }

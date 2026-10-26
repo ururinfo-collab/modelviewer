@@ -22,7 +22,9 @@ export class Notes {
     for (const el of this.pins.values()) el.remove();
     this.layer.querySelectorAll('.pin').forEach(el => el.remove());   // strays from any earlier model
     this.pins.clear();
-    try { this.list = JSON.parse(localStorage.getItem(this.key)) || []; } catch { this.list = []; }
+    // client link: the architect's notes come with the model, shown only
+    if (this.readOnly) this.list = structuredClone(this.readOnly);
+    else try { this.list = JSON.parse(localStorage.getItem(this.key)) || []; } catch { this.list = []; }
     if (!Array.isArray(this.list)) this.list = [];
     if (this.tidy()) this.save();
     this.list.forEach(n => this.pin(n));
@@ -48,6 +50,7 @@ export class Notes {
   find(id) { return this.list.find(x => x.id === String(id)); }
 
   save() {
+    if (this.readOnly) return true;
     try { localStorage.setItem(this.key, JSON.stringify(this.list)); return true; } catch { return false; }
   }
 

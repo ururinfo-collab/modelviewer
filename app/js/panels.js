@@ -8,9 +8,9 @@ import { STYLES, BACKGROUNDS, GROUNDS } from './look.js';
 import { quantities, toCSV } from './quantities.js';
 import { PRESETS, GEMINI_MODELS } from './ai.js';
 
-export const APP_VERSION = '1.18.0';
+export const APP_VERSION = '1.19.0';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look', qty: 'Quantities', compare: 'Compare revisions', notes: 'Notes', ai: 'AI render' };
+const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look', qty: 'Quantities', compare: 'Compare revisions', notes: 'Notes', ai: 'AI render', share: 'Client link' };
 
 export class Panels {
   constructor(app) {
@@ -412,17 +412,18 @@ export class Panels {
   // ---- notes ------------------------------------------------------------------------
 
   notes() {
-    const N = this.app.notes;
-    let h = '<div class="btnrow"><button class="btn primary" data-act="add">Add a note</button>' +
+    const N = this.app.notes, client = !!this.app.client;
+    let h = client ? '' : '<div class="btnrow"><button class="btn primary" data-act="add">Add a note</button>' +
       '<button class="btn" data-act="export">Export</button><button class="btn" data-act="import">Import</button></div>';
     h += `<label class="toggle">Show the pins<input type="checkbox" data-k="pins" ${N.visible ? 'checked' : ''}></label>`;
-    if (!N.list.length) h += '<p class="note">No notes yet. Tap Add a note, then tap the spot on the model.</p>';
+    if (client) h += `<p class="note">${N.list.length ? 'The architect\'s notes. Tap one to read it and see its photo.' : 'No notes were shared with this model.'}</p>`;
+    else if (!N.list.length) h += '<p class="note">No notes yet. Tap Add a note, then tap the spot on the model.</p>';
     else h += '<p class="note">Saved on this device for this model. Export to move them to another phone or computer.</p>';
     h += N.list.map((n, i) => `<div class="row"><span class="nm" data-open="${esc(n.id)}"><b>${i + 1}.</b> ${esc(n.text.split('\n')[0] || '(no text)')}` +
       `<small>${esc(n.date || '')}${n.photo ? ' · photo' : ''}</small></span>` +
       `<button class="ib" data-goto="${esc(n.id)}" data-icon="zoom" title="Go to its view"></button>` +
-      `<button class="ib" data-del="${esc(n.id)}" data-icon="trash" title="Delete this note"></button></div>`).join('');
-    if (N.list.length > 1) h += '<div class="btnrow"><button class="btn" data-act="clear">Delete all notes</button></div>';
+      (client ? '' : `<button class="ib" data-del="${esc(n.id)}" data-icon="trash" title="Delete this note"></button>`) + '</div>').join('');
+    if (N.list.length > 1 && !client) h += '<div class="btnrow"><button class="btn" data-act="clear">Delete all notes</button></div>';
     this.body.innerHTML = h;
     this.body.onclick = e => {
       const t = e.target.closest('[data-act],[data-open],[data-goto],[data-del]');
@@ -636,6 +637,104 @@ export class Panels {
       if (e.target.id === 'aiPC') A.set('pc', e.target.value.trim());
       if (e.target.dataset.k === 'detail') A.set('detail', e.target.checked);
     };
+  }
+
+  // ---- client link: a view-only copy for a client ------------------------------------------
+
+  share() {
+    const app = this.app, S = app.share, v = this.v;
+    const say = (s, warn) => { const el = this.body.querySelector('#shStatus'); if (el) { el.textContent = s; el.className = warn ? 'warn' : 'note'; } };
+    let h = '';
+    if (!S.code) {
+      // first the owner code: chosen once (first device), typed once on each other device
+      if (S.claimed === null) { S.status().then(() => this.name === 'share' && this.render('share')).catch(e => say(e.message, true)); }
+      h += S.claimed === false
+        ? '<p class="note">Choose an owner code (at least 8 characters). It protects your client links: only someone with this code can make or withdraw links. Keep it somewhere safe; you type it once on each device you share from.</p>'
+        : '<p class="note">Type your owner code (the one you chose the first time) to make and manage client links on this device.</p>';
+      h += `<div class="field"><label>Owner code</label><input id="shCode" type="password" autocomplete="off" minlength="8"></div>`;
+      h += `<div class="btnrow"><button class="btn primary" data-act="signin" ${S.claimed === null ? 'disabled' : ''}>${S.claimed === false ? 'Set owner code' : 'Continue'}</button></div>`;
+      h += '<p class="note" id="shStatus"></p>';
+    } else {
+      const order = app.chosenOrder?.(), nNotes = app.notes.list.length;
+      const days = this.shareDays || 30;
+      h += `<div class="field"><label>Title</label><input id="shTitle" type="text" value="${esc(this.shareTitle ?? (v.meta?.title || document.title))}"></div>`;
+      h += '<p class="note">The link works for</p><div class="seg">' + [[7, '1 week'], [30, '30 days'], [90, '3 months'], [365, '1 year']].map(([d, n]) =>
+        `<button data-days="${d}" class="${days === d ? 'on' : ''}">${n}</button>`).join('') + '</div>';
+      h += `<label class="toggle">Include my notes (${nNotes}, read-only)<input type="checkbox" data-k="shNotes" ${this.shareNotes !== false && nNotes ? 'checked' : ''} ${nNotes ? '' : 'disabled'}></label>`;
+      h += `<label class="toggle">Build time-lapse with ${order ? 'my build order' : 'the automatic order'}<input type="checkbox" checked disabled></label>`;
+      h += '<div class="btnrow"><button class="btn primary" data-act="create">Create client link</button></div>';
+      h += `<p class="${this.shareMsg ? 'warn' : 'note'}" id="shStatus">${esc(this.shareMsg || 'The client can orbit, use your scenes, layers, section, measure, walk, See-thru, Look, Sun, photo and AR. They cannot move objects, compare, open other files or change notes.')}</p>`;
+      this.shareMsg = null;
+      if (this.shareLast) {
+        h += `<div class="shlink"><input type="text" readonly value="${esc(this.shareLast)}"><div class="btnrow">` +
+          '<button class="btn primary" data-act="sendlast">Share</button><button class="btn" data-act="copylast">Copy</button></div></div>';
+      }
+      h += '<p class="note" style="margin-top:14px"><b>Your links</b></p><div id="shList">' + this.shareRows() + '</div>';
+      h += '<div class="btnrow"><button class="btn" data-act="refresh">Refresh</button><button class="btn" data-act="forget">Forget owner code here</button></div>';
+      if (!S.shares && !this.shareLoading) {
+        this.shareLoading = true;
+        S.list().catch(e => { S.shares = S.shares || []; this.shareMsg = e.message; }).finally(() => { this.shareLoading = false; if (this.name === 'share') this.render('share', true); });
+      }
+    }
+    this.body.innerHTML = h;
+    const copy = async text => {
+      try { await navigator.clipboard.writeText(text); app.toast('Link copied'); }
+      catch { prompt('Copy the link:', text); }
+    };
+    const send = async text => {
+      if (navigator.share) { try { await navigator.share({ title: document.title, text: 'View the model (view only):', url: text }); } catch { /* closed */ } }
+      else copy(text);
+    };
+    this.body.onclick = async e => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.days) { this.shareDays = +b.dataset.days; return this.render('share', true); }
+      if (b.dataset.copy) return copy(S.links[b.dataset.copy]);
+      if (b.dataset.revoke) {
+        if (!confirm('Withdraw this link? The client can no longer open it, and its files are deleted.')) return;
+        try { await S.revoke(b.dataset.revoke); S.shares = null; this.render('share', true); } catch (err) { say(err.message, true); }
+        return;
+      }
+      const act = b.dataset.act;
+      if (act === 'signin') {
+        const code = this.body.querySelector('#shCode').value;
+        if (code.length < 8) return say('At least 8 characters.', true);
+        b.disabled = true;
+        say('Checking...');
+        try { await S.signIn(code); S.shares = null; this.render('share'); } catch (err) { b.disabled = false; say(err.message, true); }
+      }
+      if (act === 'create') {
+        b.disabled = true;
+        this.shareTitle = this.body.querySelector('#shTitle').value.trim();
+        const notes = !!this.body.querySelector('[data-k=shNotes]')?.checked;
+        try {
+          const r = await S.create({ title: this.shareTitle || document.title, days: this.shareDays || 30, notes, order: app.chosenOrder?.() || null },
+            (f, msg) => say(`${msg} ${Math.round(f * 100)}%`));
+          this.shareLast = r.link;
+          S.shares = null;
+          this.render('share', true);
+          send(r.link);
+        } catch (err) { b.disabled = false; say(err.message, true); }
+      }
+      if (act === 'copylast') return copy(this.shareLast);
+      if (act === 'sendlast') return send(this.shareLast);
+      if (act === 'refresh') { S.shares = null; return this.render('share', true); }
+      if (act === 'forget') { S.code = ''; S.shares = null; this.shareLast = null; return this.render('share'); }
+    };
+    this.body.onchange = e => { if (e.target.dataset.k === 'shNotes') this.shareNotes = e.target.checked; };
+  }
+
+  shareRows() {
+    const S = this.app.share, list = S.shares;
+    if (!list) return '<p class="note">Loading...</p>';
+    if (!list.length) return '<p class="note">No links yet.</p>';
+    const day = t => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    return list.map(s => {
+      const gone = s.revoked ? 'withdrawn' : new Date(s.expires_at) < new Date() ? 'expired' : !s.ready ? 'unfinished' : '';
+      return `<div class="row ${gone ? 'off' : ''}"><span class="nm">${esc(s.title)}<small>${gone || `until ${day(s.expires_at)}`} · opened ${s.views}× · ${(s.bytes / 1048576).toFixed(1)} MB</small></span>` +
+        (!gone && S.links[s.id] ? `<button class="ib" data-copy="${esc(s.id)}" data-icon="share" title="Copy the link"></button>` : '') +
+        (!gone ? `<button class="ib" data-revoke="${esc(s.id)}" data-icon="trash" title="Withdraw the link"></button>` : '') + '</div>';
+    }).join('');
   }
 
   // ---- settings --------------------------------------------------------------

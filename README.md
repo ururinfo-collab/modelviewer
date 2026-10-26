@@ -88,6 +88,7 @@ Isolate, See-thru, Move.
 | See-thru | Choose **Solid**, **See inside** (walls, roof, ceilings, floors, doors, windows, railings and boundary see-through; furniture, fittings, pipes, AC and stairs solid, so you look in from outside; taps go through the shell) or **X-ray** (everything see-through, selection solid). Calibrated on BuildLapse: 16 % opacity, faces tinted toward glass, faint grey edge lines. Also clears objects made see-through one by one. In See inside and X-ray nothing blocks you: zooming keeps flying forward through walls and furniture, and Walk passes through them (you still follow floors and stairs, never furniture) |
 | Look | Render style: **Technical** (colours + edge lines), **Shaded** (no lines, soft corners), **White model** (architectural white), **Sketch** (black lines on white), **Realistic** (materials, textures, studio sky light, sun shadows, grass). Background (light grey, white, sky, dark), ground (none, grass, paving), soft corner shadows (ambient occlusion; on by default on computers only), sun shadows, edge lines, brightness (Realistic). Remembered on each device |
 | AI render | Photoreal picture of the current view through SketchRender's engines, see below |
+| Client link | A private, expiring view-only link to the model for a client, see below |
 | Quantities | Count, solid volume, surface area and length per tag, category or object name; only what is shown or everything; isolate a group; **Export CSV** (one line per object with sizes, plus totals) for Excel / Google Sheets |
 | Compare | Pick another revision (.skp, .glb or .dae): parts are matched by name and place; added (green), moved or resized more than 2 cm (orange) and removed (red, drawn where they were) are listed and coloured, the rest fades. Tap a list line to zoom to it |
 | Notes | Add a note, tap the spot: text plus an optional photo (camera or gallery, shrunk to keep many). Numbered pins on the model; the list jumps back to the view each note was made from. Kept on the device per model; Export / Import a small .json to move them between phone and computer. Delete one with its bin in the list (or Delete in the note), or Delete all notes |
@@ -106,6 +107,27 @@ and tilting. Snap = 5 cm and 15°. Undo steps back; Reset puts the object back. 
 - iPhone (Wi-Fi link): touch and hold the picture › Save to Photos; videos go to Files first.
 - Android: "Save to phone" puts it in Downloads (shows in Gallery / Photos); "Share" sends it anywhere.
 - The phone's own screen recorder also works and includes the buttons.
+
+## Client link (view only)
+
+**Client link** in the toolbar makes a private link to the open model for a client.
+1. First time: choose an **owner code** (8+ characters). Only a fingerprint of it is stored online; on each other device
+   you share from, type it once. Keep it safe: it is what lets you make and withdraw links.
+2. Title, how long the link works (1 week to 1 year), include your notes or not, **Create client link**. The model
+   uploads and the phone's Share sheet opens (WhatsApp, mail...); Copy also works.
+3. **Your links** shows each link: valid until, how often it was opened, size. The bin withdraws a link at once and
+   deletes its files. Links made on this device can be copied again (the share icon).
+
+The client opens `https://ururinfo-collab.github.io/modelviewer/#view=...` on any phone or computer, no install or
+account: the model, your scenes, layers, section, measure, walk, See-thru, Look, Sun, photo, record, AR and the
+Build time-lapse with your build order; your notes show as read-only pins. No moving objects, compare, quantities,
+AI render or opening other files. An expired or withdrawn link shows a short message.
+
+Behind it (Lucie's Supabase project "ururinfo-collab's Project", Singapore, free plan): private bucket `mv-shares`
+(50 MB per file), tables `mv_owner`, `mv_shares`, `mv_fails` (server-only), and the Edge Function `mv-share`
+(source in `supabase/functions/mv-share/index.ts`). Files go up and down through signed links valid for minutes to
+hours; the link's secret is stored only as a SHA-256 fingerprint. Ten wrong codes or links in 15 minutes pause it.
+Forgot the owner code: delete the one row in `mv_owner` (Supabase › Table editor) and choose a new one in the app.
 
 ## AI render (SketchRender)
 
