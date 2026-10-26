@@ -72,6 +72,7 @@ export class MoveTool {
   }
 
   begin() {
+    this.onBeforeChange?.('Move');
     const obj = this.E.obj;
     this.proxy.updateMatrixWorld();
     this.start0 = { proxyInv: this.proxy.matrixWorld.clone().invert(), world: obj.matrixWorld.clone(), local: obj.matrix.clone() };
@@ -93,6 +94,7 @@ export class MoveTool {
     if (!this.start0) return;
     const after = this.E.obj.matrix.clone();
     if (!after.equals(this.start0.local)) this.undoStack.push({ E: this.E, before: this.start0.local, after });
+    else this.onNoChange?.();          // a touch on the arrows without moving: no undo step
     this.start0 = null;
     this.placeProxy();
     this.v.updateVisibility();
@@ -108,9 +110,16 @@ export class MoveTool {
     this.onChange?.();
   }
 
+  // put an object at a given local matrix (undo / redo)
+  setMatrix(E, m) {
+    setLocal(E.obj, m);
+    this.v.requestRender();
+  }
+
   reset(E) {
     const m = this.original.get(E);
     if (!m) return;
+    this.onBeforeChange?.('Reset position');
     this.undoStack.push({ E, before: E.obj.matrix.clone(), after: m.clone() });
     setLocal(E.obj, m);
     if (this.E) this.placeProxy();
@@ -119,8 +128,8 @@ export class MoveTool {
   }
 
   resetAll() {
+    this.onBeforeChange?.('Reset moved objects');
     for (const [E, m] of this.original) setLocal(E.obj, m);
-    this.original.clear();
     this.undoStack = [];
     if (this.E) this.placeProxy();
     this.v.requestRender();

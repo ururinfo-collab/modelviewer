@@ -5,6 +5,7 @@ import { loadFiles, MODEL_EXT } from './loaders.js';
 import { SectionTool, MeasureTool, WalkTool } from './tools.js';
 import { MoveTool } from './transform.js';
 import { Sequence } from './sequence.js';
+import { History } from './history.js';
 import { screenshot, Recorder, showSave } from './capture.js';
 import { saveRecent, listRecent, getRecent, deleteRecent, getSetting, setSetting } from './store.js';
 import { Panels, esc } from './panels.js';
@@ -38,18 +39,52 @@ const app = window.app = {
   recorder: new Recorder(viewer),
   seq: new Sequence(viewer),
 };
+app.history = new History(app);
 app.panels = new Panels(app);
+app.move.onBeforeChange = label => app.history.record(label);
+app.move.onNoChange = () => app.history.dropLast();
 
 // ---- toast + busy ------------------------------------------------------------
 
 let toastTimer;
-function toast(msg, ms = 2400) {
+// action: optional { label, fn } shown as a button in the toast (e.g. Undo)
+function toast(msg, ms = 2400, action = null) {
   const t = $('#toast');
   t.textContent = msg;
+  t.classList.toggle('act', !!action);
+  if (action) {
+    const b = document.createElement('button');
+    b.textContent = action.label;
+    b.onclick = () => { t.classList.remove('show'); action.fn(); };
+    t.appendChild(b);
+  }
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+  toastTimer = setTimeout(() => t.classList.remove('show'), action ? Math.max(ms, 4500) : ms);
 }
+
+// ---- undo / redo -------------------------------------------------------------
+
+function undo() {
+  const label = app.history.undo();
+  if (label) toast(`Undone: ${label}`);
+}
+function redo() {
+  const label = app.history.redo();
+  if (label) toast(`Redone: ${label}`);
+}
+app.undo = undo;
+app.history.onChange = () => {
+  $('#btnUndo').disabled = !app.history.canUndo;
+  $('#btnRedo').disabled = !app.history.canRedo;
+  $('#btnUndo').title = app.history.canUndo ? `Undo: ${app.history.undoStack.at(-1).label} (Ctrl+Z)` : 'Nothing to undo';
+  $('#btnRedo').title = app.history.canRedo ? `Redo: ${app.history.redoStack.at(-1).label} (Ctrl+Y)` : 'Nothing to redo';
+  updateBars();
+  if (app.panels.name && app.panels.name !== 'section' && app.panels.name !== 'sun') app.panels.refresh();
+};
+$('#btnUndo').onclick = undo;
+$('#btnRedo').onclick = redo;
+const undoAction = { label: 'Undo', fn: undo };
 
 function busy(text, frac) {
   if (text === false) { $('#busy').hidden = true; return; }
@@ -76,6 +111,7 @@ async function openFiles(files, keep = true) {
     app.loaded = loaded;
     if (loaded.sequence) keepOrder(loaded.sequence);    // opened together with the model: keep it too
     app.move = resetMove();
+    app.history.clear();
     $('#title').textContent = viewer.meta.title || main.name.replace(/\.[^.]+$/, '');
     document.title = $('#title').textContent;
     $('#welcome').hidden = true;
@@ -212,7 +248,9 @@ async function takeShared() {
 function buildScenes() {
   const bar = $('#scenes');
   const chips = [];
-  if (viewer.isolated) chips.push(`<button class="chip on" data-v="uniso">Exit isolate</button>`);
+  if (viewer.isolated) chips.push(`<button class="chip warn" data-v="uniso">Exit isolate</button>`);
+  const nHidden = hiddenCount();
+  if (nHidden) chips.push(`<button class="chip warn" data-v="hidden">Hidden (${nHidden})</button>`);
   for (const [k, n] of [['home', 'Home'], ['top', 'Top'], ['front', 'Front'], ['back', 'Back'], ['left', 'Left'], ['right', 'Right']]) {
     chips.push(`<button class="chip std" data-v="${k}">${n}</button>`);
   }
@@ -224,6 +262,11 @@ function buildScenes() {
   mine.forEach((s, i) => chips.push(`<button class="chip" data-u="${i}">${esc(s.name)}</button>`));
   chips.push('<button class="chip add" data-v="add" title="Save this view">+ View</button>');
   bar.innerHTML = chips.join('');
+}
+
+// objects hidden one by one (Hide button, tree eye), not by tags or categories
+function hiddenCount() {
+  return viewer.ents.filter(E => E.hidden).length;
 }
 
 const STD = { top: [0, 0, 1], front: [0, -1, 0], back: [0, 1, 0], left: [-1, 0, 0], right: [1, 0, 0] };
@@ -244,6 +287,7 @@ function fitFov(fov, srcAspect) {
 }
 
 function applyScene(s) {
+  if (s.hiddenTags || s.hidden) app.history.record(`Scene ${s.name}`);
   if (s.useCamera !== false && s.eye) {
     const eye = viewer.srcPoint(s.eye), target = viewer.srcPoint(s.target);
     let fov = s.fov || 35;
@@ -274,7 +318,12 @@ $('#scenes').onclick = e => {
   $$('#scenes .chip').forEach(c => c.classList.toggle('on', c === b && !b.dataset.v));
   if (app.tool === 'walk') exitTools();
   const views = getSetting(viewer.modelName, 'views', []);
-  if (b.dataset.v === 'uniso') { viewer.isolate(null); return; }
+  if (b.dataset.v === 'uniso') { app.history.record('Exit isolate'); viewer.isolate(null); return; }
+  if (b.dataset.v === 'hidden') {
+    app.panels.layersTab = 'hidden';
+    if (app.panels.name === 'layers') app.panels.render('layers'); else togglePanel('layers');
+    return;
+  }
   if (b.dataset.v === 'add') {
     const name = prompt('Name for this view', `View ${views.length + 1}`);
     if (!name) return;
@@ -306,9 +355,10 @@ $('#scenes').addEventListener('pointerdown', e => {
   }, 650);
 });
 ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => $('#scenes').addEventListener(t, () => clearTimeout(holdTimer)));
+let shownHidden = 0;
 viewer.addEventListener('visibility', () => {
-  const has = !!$('#scenes [data-v=uniso]');
-  if (has !== !!viewer.isolated) buildScenes();
+  const has = !!$('#scenes [data-v=uniso]'), n = hiddenCount();
+  if (has !== !!viewer.isolated || n !== shownHidden) { shownHidden = n; buildScenes(); }
 });
 
 // ---- rows that scroll sideways: also with a mouse (wheel, drag, arrows), not just a finger
@@ -671,12 +721,18 @@ $('#selbar').onclick = e => {
   if (!a || !E) return;
   if (a === 'info') { app.panels.open('info'); setToolButtons(); }
   if (a === 'zoom') viewer.zoomTo(E);
-  if (a === 'hide') { viewer.setHidden(E, true); viewer.select(null); toast('Hidden. Layers › Show all brings it back.'); }
+  if (a === 'hide') {
+    app.history.record(`Hide ${E.name}`);
+    viewer.setHidden(E, true);
+    viewer.select(null);
+    toast('Hidden. The Hidden button in the views row brings it back.', 4500, undoAction);
+  }
   if (a === 'isolate') {
+    app.history.record(viewer.isolated?.has(E) ? 'Exit isolate' : `Isolate ${E.name}`);
     if (viewer.isolated?.has(E)) viewer.isolate(null);
     else { viewer.isolate([E]); viewer.zoomTo(E); }
   }
-  if (a === 'ghost') { viewer.setGhost(E, !E.ghost); updateBars(); }
+  if (a === 'ghost') { app.history.record(`See-through ${E.name}`); viewer.setGhost(E, !E.ghost); updateBars(); }
   if (a === 'move') { app.panels.close(); setTool('move'); app.move.start(E); updateBars(); toast('Drag the arrows. Rotate and Up/down below.'); }
   if (a === 'close') viewer.select(null);
 };
@@ -688,7 +744,7 @@ $('#movebar').onclick = e => {
   if (a === 'translate' || a === 'rotate') { m.mode = a; m.applySettings(); }
   if (a === 'free') { m.horizontal = !m.horizontal; m.applySettings(); }
   if (a === 'snap') { m.snap = !m.snap; m.applySettings(); toast(m.snap ? 'Snap: 5 cm and 15°' : 'Snap off'); }
-  if (a === 'undo') m.undo();
+  if (a === 'undo') undo();
   if (a === 'reset' && m.E) m.reset(m.E);
   if (a === 'done') exitTools();
   updateBars();
@@ -830,8 +886,14 @@ function onTap(x, y) {
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
   if (e.key === 'Escape') { if (app.tool) exitTools(); else viewer.select(null); }
-  if ((e.key === 'Delete' || e.key === 'h') && viewer.selected && !app.tool) { viewer.setHidden(viewer.selected, true); viewer.select(null); }
-  if (e.key === 'z' && (e.ctrlKey || e.metaKey) && app.tool === 'move') app.move.undo();
+  if ((e.key === 'Delete' || e.key === 'h') && viewer.selected && !app.tool) {
+    app.history.record(`Hide ${viewer.selected.name}`);
+    viewer.setHidden(viewer.selected, true);
+    viewer.select(null);
+  }
+  const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+  if (mod && k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  if (mod && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
   if (e.key === 'f' && viewer.selected) viewer.zoomTo(viewer.selected);
 });
 

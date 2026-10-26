@@ -5,7 +5,7 @@ import { sunPosition, sunVectorSrc, localToUtc, SKETCHUP_DEFAULT, FALLBACK } fro
 import { getSetting, setSetting, listRecent, deleteRecent } from './store.js';
 import { icon } from './icons.js';
 
-export const APP_VERSION = '1.3.1';
+export const APP_VERSION = '1.4.0';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More' };
 
@@ -52,10 +52,13 @@ export class Panels {
 
   layers() {
     const v = this.v, tab = this.layersTab;
+    const hiddenEnts = v.ents.filter(E => E.hidden), ghostEnts = v.ents.filter(E => E.ghost && !(E.parent?.ghost));
+    let h = `<div class="seg"><button data-tab="tags" class="${tab === 'tags' ? 'on' : ''}">Tags (${v.tags.size})</button>` +
+            `<button data-tab="cats" class="${tab === 'cats' ? 'on' : ''}">Categories (${v.categories.size})</button>` +
+            `<button data-tab="hidden" class="${tab === 'hidden' ? 'on' : ''}">Hidden (${hiddenEnts.length + ghostEnts.length})</button></div>`;
+    if (tab === 'hidden') return this.hiddenList(h, hiddenEnts, ghostEnts);
     const map = tab === 'tags' ? v.tags : v.categories;
     const iso = v.isolated;
-    let h = `<div class="seg"><button data-tab="tags" class="${tab === 'tags' ? 'on' : ''}">Tags (${v.tags.size})</button>` +
-            `<button data-tab="cats" class="${tab === 'cats' ? 'on' : ''}">Categories (${v.categories.size})</button></div>`;
     h += `<div class="btnrow"><button class="btn" data-all="show">Show all</button><button class="btn" data-all="hide">Hide all</button>` +
          (iso ? '<button class="btn primary" data-all="uniso">Exit isolate</button>' : '') + '</div>';
     if (tab === 'cats') h += '<p class="note">Guessed from object names. Hides the parts themselves, wherever they sit.</p>';
@@ -70,13 +73,20 @@ export class Panels {
     this.body.onclick = e => {
       const b = e.target.closest('button');
       if (!b) return;
-      if (b.dataset.tab) { this.layersTab = b.dataset.tab === 'tags' ? 'tags' : 'cats'; return this.render('layers'); }
-      if (b.dataset.all === 'show') return v.showAll();
-      if (b.dataset.all === 'hide') { for (const t of map.values()) t.visible = false; return v.updateVisibility(); }
-      if (b.dataset.all === 'uniso') return v.isolate(null);
-      if (b.dataset.vis) { const t = map.get(b.dataset.vis); t.visible = !t.visible; return v.updateVisibility(); }
+      const rec = label => this.app.history.record(label);
+      if (b.dataset.tab) { this.layersTab = b.dataset.tab; return this.render('layers'); }
+      if (b.dataset.all === 'show') { rec('Show all'); return v.showAll(); }
+      if (b.dataset.all === 'hide') { rec(`Hide all ${tab === 'tags' ? 'tags' : 'categories'}`); for (const t of map.values()) t.visible = false; return v.updateVisibility(); }
+      if (b.dataset.all === 'uniso') { rec('Exit isolate'); return v.isolate(null); }
+      if (b.dataset.vis) {
+        const t = map.get(b.dataset.vis);
+        rec(`${t.visible ? 'Hide' : 'Show'} ${t.name}`);
+        t.visible = !t.visible;
+        return v.updateVisibility();
+      }
       if (b.dataset.iso) {
         const key = `${tab}:${b.dataset.iso}`;
+        rec(iso && iso.__key === key ? 'Exit isolate' : `Isolate ${b.dataset.iso}`);
         if (iso && iso.__key === key) return v.isolate(null);
         const t = map.get(b.dataset.iso);
         t.visible = true;
@@ -86,6 +96,45 @@ export class Panels {
         v.updateVisibility();
         v.fitAll();
       }
+    };
+  }
+
+  // objects hidden or made see-through one by one: bring them back singly or all at once
+  hiddenList(head, hiddenEnts, ghostEnts) {
+    const v = this.v;
+    const path = E => {
+      const p = [];
+      for (let a = E.parent; a && a !== v.top && a !== v.rootEnt; a = a.parent) p.unshift(a.name);
+      return p.join(' › ');
+    };
+    const row = (E, kind) => `<div class="row"><span class="nm">${esc(E.name)}<small>${esc(path(E) || E.tag || '')}</small></span>` +
+      `<button class="ib" data-zoomback="${E.id}" data-kind="${kind}" data-icon="zoom" title="Show and zoom to it"></button>` +
+      `<button class="ib" data-back="${E.id}" data-kind="${kind}" data-icon="eye" title="Show again"></button></div>`;
+    let h = head;
+    if (!hiddenEnts.length && !ghostEnts.length) h += '<p class="note">Nothing hidden. Objects you hide with the Hide button or the tree show up here.</p>';
+    if (hiddenEnts.length) {
+      h += `<div class="btnrow"><button class="btn primary" data-allback="hidden">Show all ${hiddenEnts.length} hidden</button></div>`;
+      h += hiddenEnts.map(E => row(E, 'hidden')).join('');
+    }
+    if (ghostEnts.length) {
+      h += `<p class="note" style="margin-top:14px">See-through</p><div class="btnrow"><button class="btn" data-allback="ghost">Make all solid</button></div>`;
+      h += ghostEnts.map(E => row(E, 'ghost')).join('');
+    }
+    this.body.innerHTML = h;
+    this.body.onclick = e => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.tab) { this.layersTab = b.dataset.tab; return this.render('layers'); }
+      const rec = label => this.app.history.record(label);
+      if (b.dataset.allback === 'hidden') { rec('Show hidden objects'); for (const E of hiddenEnts) E.hidden = false; return v.updateVisibility(); }
+      if (b.dataset.allback === 'ghost') { rec('Make all solid'); for (const E of v.ents) E.ghost = false; v.refreshMaterials(); return this.render('layers', true); }
+      const id = b.dataset.back ?? b.dataset.zoomback;
+      if (id == null) return;
+      const E = v.ents[+id];
+      rec(`Show ${E.name}`);
+      if (b.dataset.kind === 'hidden') v.setHidden(E, false);
+      else { v.setGhost(E, false); this.render('layers', true); }
+      if (b.dataset.zoomback != null) { v.select(E); v.zoomTo(E); }
     };
   }
 
@@ -141,7 +190,7 @@ export class Panels {
       if (t.dataset.exp) { this.expanded.has(E.id) ? this.expanded.delete(E.id) : this.expanded.add(E.id); this.render('tree', true); }
       else if (t.dataset.pick) v.select(v.selected === E ? null : E);
       else if (t.dataset.zoom) { v.select(E); v.zoomTo(E); }
-      else if (t.dataset.hide) v.setHidden(E, !E.hidden);
+      else if (t.dataset.hide) { this.app.history.record(`${E.hidden ? 'Show' : 'Hide'} ${E.name}`); v.setHidden(E, !E.hidden); }
     };
   }
 
@@ -350,7 +399,7 @@ export class Panels {
     };
     this.body.onclick = async e => {
       const a = e.target.closest('button')?.dataset.act;
-      if (a === 'showall') v.showAll();
+      if (a === 'showall') { app.history.record('Show everything'); v.showAll(); }
       if (a === 'resetmoved') { app.move.resetAll(); this.render('settings'); }
       if (a === 'open') app.showWelcome();
       if (a === 'forget' && confirm('Remove the models kept on this phone? Your files elsewhere are not touched.')) {

@@ -61,7 +61,12 @@ Parts exported loose (each chair leg its own group, as in Rev05) are grouped bac
 "Dining chair 1 leg"... become "Dining chair 1".
 
 **Top row:** Home, Top, Front, Back, Left, Right, then every SketchUp scene (camera, hidden tags, hidden objects,
-shadow time), then your own saved views (+ View saves, press and hold one to delete).
+shadow time), then your own saved views (+ View saves, press and hold one to delete). On a computer: arrows at the
+ends, mouse wheel, or drag. An orange **Hidden (n)** button appears while objects are hidden: it opens
+Layers › Hidden, where each one comes back with its eye (or zoom) button, or all at once.
+
+**Undo / Redo** (top bar, Ctrl+Z / Ctrl+Y): steps back and forward through hide, see-through, isolate, tags,
+categories, scene visibility, moves, rotations and resets (last 60 steps; a new model starts a fresh history).
 
 **Selected object:** Info (name, tag, category, size, levels, volume, IFC / component attributes), Zoom, Hide,
 Isolate, See-thru, Move.

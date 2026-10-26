@@ -32,6 +32,8 @@ input, select { font: inherit; color: inherit; }
   box-shadow: 0 2px 12px rgba(20, 30, 40, .14); }
 .ib { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 10px; flex: none; }
 .ib.sm { width: 34px; height: 34px; }
+.ib:disabled { opacity: .3; cursor: default; }
+#top .ib { width: 40px; }
 .ib:active, #tools button:active, .baracts button:active { background: rgba(47, 111, 224, .12); }
 
 /* ---- top bar + scene chips ---- */
@@ -51,6 +53,7 @@ input, select { font: inherit; color: inherit; }
   box-shadow: 0 1px 6px rgba(20, 30, 40, .14); font-size: 13.5px; }
 .chip.std { color: var(--ink2); }
 .chip.on { background: var(--accent); color: #fff; }
+.chip.warn { background: var(--orange); color: #fff; font-weight: 600; }
 .chip.add { font-weight: 700; }
 .chip-sep { flex: none; width: 1px; background: var(--line); margin: 4px 2px; }
 
@@ -152,6 +155,8 @@ body.walking #tools, body.walking #scenesWrap, body.walking #dock { display: non
 #toast { position: fixed; left: 50%; top: calc(110px + var(--sat)); transform: translate(-50%, -10px); background: rgba(31,38,45,.92); color: #fff;
   padding: 8px 14px; border-radius: 12px; font-size: 14px; z-index: 20; opacity: 0; transition: .25s; pointer-events: none; max-width: 86vw; text-align: center; }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
+#toast.act { pointer-events: auto; display: flex; align-items: center; gap: 12px; }
+#toast button { color: #8fb4ff; font-weight: 700; padding: 4px 2px; }
 
 /* ---- welcome, busy, save ---- */
 #welcome { position: fixed; inset: 0; z-index: 10; background: linear-gradient(160deg, #f6f7f9, #e3e7eb); display: grid; place-items: center;
