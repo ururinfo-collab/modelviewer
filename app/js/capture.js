@@ -9,10 +9,10 @@ export async function screenshot(viewer, scale = 1) {
   const pr = r.getPixelRatio();
   const w = viewer.canvas.clientWidth, h = viewer.canvas.clientHeight;
   const target = Math.min(pr * scale, 4096 / Math.max(w, h));
-  if (target !== pr) r.setPixelRatio(target);
+  if (target !== pr) viewer.setPixelRatio(target);
   viewer.render();
   const blob = await new Promise(res => viewer.canvas.toBlob(res, 'image/png'));
-  if (target !== pr) { r.setPixelRatio(pr); viewer.resize(); viewer.render(); }
+  if (target !== pr) { viewer.setPixelRatio(pr); viewer.render(); }
   return { blob, name: `${safe(viewer.modelName)}_${stamp()}.png` };
 }
 

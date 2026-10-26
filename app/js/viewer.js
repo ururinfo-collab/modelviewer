@@ -3,6 +3,11 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { categorize } from './categories.js';
 import { autoStage } from './sequence.js';
 
@@ -55,6 +60,17 @@ export class Viewer extends EventTarget {
     this.ground.visible = false;
     this.ground.raycast = () => {};
     this.scene.add(this.ground);
+    // coloured ground (grass / paving) for the Realistic and other looks
+    this.groundSurface = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshLambertMaterial({ color: 0x86a061 }));
+    this.groundSurface.rotation.x = -Math.PI / 2;
+    this.groundSurface.receiveShadow = true;
+    this.groundSurface.visible = false;
+    this.groundSurface.raycast = () => {};
+    this.scene.add(this.groundSurface);
+    this.groundKind = 'none';
+    this.style = 'technical';
+    this.lightLevels = { hemi: 1.9, sun: 1.5 };
+    this.ao = false;
 
     this.edgeMat = new THREE.LineBasicMaterial({ color: 0x2c3238, transparent: true, opacity: 0.6, depthWrite: false });
     this.secUniforms = { uSecOn: { value: 0 }, uSecColor: { value: new THREE.Color(0xb8483f) } };
@@ -103,7 +119,116 @@ export class Viewer extends EventTarget {
     const w = Math.max(1, this.canvas.clientWidth), h = Math.max(1, this.canvas.clientHeight);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
+    this.sizeComposer();
     this.applyInset();
+  }
+
+  setPixelRatio(pr) {
+    this.renderer.setPixelRatio(pr);
+    this.resize();
+  }
+
+  // ---- looks: ambient occlusion, environment light, background, ground ---------
+
+  // soft shadows in corners and under furniture (screen-space, GTAO); multisampled so edges stay smooth
+  setAO(on) {
+    this.ao = on;
+    if (on && !this.composer) {
+      const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+      const c = this.composer = new EffectComposer(this.renderer, target);
+      c.addPass(new RenderPass(this.scene, this.camera));
+      this.gtao = new GTAOPass(this.scene, this.camera, 1, 1);
+      this.gtao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.5, thickness: 1.5, scale: 1, samples: 16 });
+      this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
+      this.gtao.blendIntensity = 1;
+      c.addPass(this.gtao);
+      c.addPass(new OutputPass());
+      this.sizeComposer();
+    }
+    this.requestRender();
+  }
+
+  sizeComposer() {
+    if (!this.composer) return;
+    const w = Math.max(1, this.canvas.clientWidth), h = Math.max(1, this.canvas.clientHeight);
+    this.composer.setPixelRatio(this.renderer.getPixelRatio());
+    this.composer.setSize(w, h);
+  }
+
+  // image-based light from a neutral studio room: gives PBR materials their sheen and soft fill
+  setEnvironment(intensity) {
+    if (intensity > 0 && !this.envTex) {
+      const pmrem = new THREE.PMREMGenerator(this.renderer);
+      this.envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      pmrem.dispose();
+    }
+    this.scene.environment = intensity > 0 ? this.envTex : null;
+    this.scene.environmentIntensity = intensity;
+    this.requestRender();
+  }
+
+  setBackground(kind) {
+    this.backgroundKind = kind;
+    if (kind === 'sky') {
+      if (!this.skyTex) {
+        const cv = document.createElement('canvas');
+        cv.width = 2; cv.height = 256;
+        const g = cv.getContext('2d'), grad = g.createLinearGradient(0, 0, 0, 256);
+        grad.addColorStop(0, '#6f9fd8');
+        grad.addColorStop(0.55, '#bcd5ee');
+        grad.addColorStop(1, '#eef3f7');
+        g.fillStyle = grad;
+        g.fillRect(0, 0, 2, 256);
+        this.skyTex = new THREE.CanvasTexture(cv);
+        this.skyTex.colorSpace = THREE.SRGBColorSpace;
+      }
+      this.scene.background = this.skyTex;
+    } else {
+      this.scene.background = new THREE.Color({ white: 0xffffff, dark: 0x1e2329 }[kind] ?? BG);
+    }
+    this.requestRender();
+  }
+
+  // none | grass | paving: a large ground plane at level 0 that takes shadows
+  setGround(kind) {
+    this.groundKind = kind;
+    const g = this.groundSurface;
+    if (kind !== 'none') {
+      const color = kind === 'grass' ? 0x5f7a45 : 0xbdb7ad;
+      g.material.dispose();
+      g.material = this.style === 'realistic'
+        ? new THREE.MeshStandardMaterial({ color, roughness: 1 })
+        : new THREE.MeshLambertMaterial({ color });
+    }
+    g.visible = kind !== 'none';
+    this.ground.visible = this.shadows && !g.visible;
+    this.requestRender();
+  }
+
+  // lighting balance for the current look; the sun's angle still comes from the Sun panel
+  setLightLevels(levels) {
+    this.lightLevels = levels;
+    this.setSunDir(this.sunDir);
+  }
+
+  setToneMapping(on, exposure = 1) {
+    this.renderer.toneMapping = on ? THREE.NeutralToneMapping : THREE.NoToneMapping;
+    this.renderer.toneMappingExposure = exposure;
+    this.requestRender();
+  }
+
+  // technical | shaded | clay | sketch | realistic: rebuilds every material in the new style
+  setStyle(style) {
+    this.style = style;
+    for (const v of this.mats.values()) for (const m of Object.values(v)) m.dispose();
+    this.mats.clear();
+    this.refreshMaterials();
+  }
+
+  setEdgeLook(color, opacity) {
+    this.edgeMat.color.set(color);
+    this.edgeMat.opacity = opacity;
+    this.requestRender();
   }
 
   // Keep the model centred in the part of the screen the panels leave free (pixels to shift).
@@ -141,7 +266,9 @@ export class Viewer extends EventTarget {
   }
 
   render() {
-    this.renderer.render(this.scene, this.camera);
+    // ambient occlusion only on solid views (it would darken see-through glass)
+    if (this.ao && this.composer && this.viewMode === 'solid') this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
     for (const f of this.afterRender) f();
   }
 
@@ -176,6 +303,8 @@ export class Viewer extends EventTarget {
     const gy = THREE.MathUtils.clamp(0, this.box.min.y, this.box.max.y);
     this.ground.position.set(this.sphere.center.x, gy - 0.005, this.sphere.center.z);
     this.ground.scale.setScalar(R * 6);
+    this.groundSurface.position.set(this.sphere.center.x, gy - 0.02, this.sphere.center.z);
+    this.groundSurface.scale.setScalar(R * 12);
     this.setSunDir(this.sunDir);
     this.updateVisibility();
     this.fitAll(false);
@@ -354,12 +483,8 @@ export class Viewer extends EventTarget {
   variants(src) {
     let v = this.mats.get(src);
     if (v) return v;
-    const opacity = src.opacity ?? 1;
-    const base = this.withSection(new THREE.MeshLambertMaterial({
-      name: src.name, color: src.color ? src.color.clone() : new THREE.Color(0xdddddd), map: src.map || null,
-      side: THREE.DoubleSide, transparent: !!src.transparent || opacity < 1, opacity,
-      polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
-    }));
+    const base = this.withSection(this.styledMaterial(src));
+    const opacity = base.opacity;
     if (base.transparent) base.depthWrite = false;
     // see-through look calibrated on BuildLapse: 16 % opacity, colour 35 % toward pale glass
     const ghost = this.withSection(base.clone());
@@ -368,17 +493,42 @@ export class Viewer extends EventTarget {
     ghost.opacity = Math.min(opacity, GHOST_OPACITY);
     ghost.color.lerp(GLASS, 0.35);
     const sel = this.withSection(base.clone());
-    sel.emissive = new THREE.Color(0x2f6fe0);
-    sel.emissiveIntensity = 0.5;
     sel.transparent = false;
     sel.opacity = 1;
     sel.depthWrite = true;
     const fresh = this.withSection(sel.clone());
-    fresh.emissive = new THREE.Color(0xff6a00);
-    fresh.emissiveIntensity = 0.75;
+    if (base.emissive) {
+      sel.emissive = new THREE.Color(0x2f6fe0);
+      sel.emissiveIntensity = 0.5;
+      fresh.emissive = new THREE.Color(0xff6a00);
+      fresh.emissiveIntensity = 0.75;
+    } else {          // unlit Sketch look: tint instead of glow
+      sel.color.set(0xb4ccf7);
+      fresh.color.set(0xffb57d);
+    }
     v = { base, ghost, sel, fresh };
     this.mats.set(src, v);
     return v;
+  }
+
+  // the model's own material in the current look
+  styledMaterial(src) {
+    const opacity = src.opacity ?? 1, glass = !!src.transparent || opacity < 0.999;
+    const color = src.color ? src.color.clone() : new THREE.Color(0xdddddd);
+    const common = { name: src.name, side: THREE.DoubleSide, transparent: glass, opacity,
+      polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 };
+    switch (this.style) {
+      case 'clay':        // architectural white model; glass stays a pale tint
+        return new THREE.MeshLambertMaterial({ ...common, color: glass ? 0xdde7ee : 0xf1eee8 });
+      case 'sketch':      // white paper, the edge lines do the drawing
+        return new THREE.MeshBasicMaterial({ ...common, color: glass ? 0xeef4f8 : 0xffffff });
+      case 'realistic':   // physically based: sky light, sheen on glass and metal
+        return new THREE.MeshStandardMaterial({ ...common, color, map: src.map || null,
+          roughness: glass ? 0.05 : /metal|steel|alu|chrome|inox|ss\b/i.test(src.name || '') ? 0.35 : 0.85,
+          metalness: /metal|steel|alu|chrome|inox|ss\b/i.test(src.name || '') ? 0.6 : 0 });
+      default:            // technical, shaded
+        return new THREE.MeshLambertMaterial({ ...common, color, map: src.map || null });
+    }
   }
 
   // is this part drawn see-through right now
@@ -421,7 +571,7 @@ export class Viewer extends EventTarget {
   setShadows(on) {
     this.shadows = on;
     this.renderer.shadowMap.enabled = on;
-    this.ground.visible = on;
+    this.ground.visible = on && !this.groundSurface.visible;
     for (const v of this.mats.values()) for (const m of Object.values(v)) m.needsUpdate = true;
     this.refreshMaterials();
   }
@@ -432,8 +582,9 @@ export class Viewer extends EventTarget {
     const S = this.sphere || new THREE.Sphere(new THREE.Vector3(), 20);
     const up = this.sunDir.y;
     const day = THREE.MathUtils.smoothstep(up, -0.02, 0.12);
-    this.sun.intensity = 1.5 * day;
-    this.hemi.intensity = 1.2 + 0.7 * day;
+    const L = this.lightLevels;
+    this.sun.intensity = L.sun * day;
+    this.hemi.intensity = L.hemi * (0.63 + 0.37 * day);
     this.sun.position.copy(S.center).addScaledVector(this.sunDir, S.radius * 2);
     this.sun.target.position.copy(S.center);
     const sc = this.sun.shadow.camera;

@@ -4,10 +4,11 @@ import { fmt, fmtVol, getUnit, setUnit, UNITS } from './units.js';
 import { sunPosition, sunVectorSrc, localToUtc, SKETCHUP_DEFAULT, FALLBACK } from './sun.js';
 import { getSetting, setSetting, listRecent, deleteRecent } from './store.js';
 import { icon } from './icons.js';
+import { STYLES, BACKGROUNDS, GROUNDS } from './look.js';
 
-export const APP_VERSION = '1.6.1';
+export const APP_VERSION = '1.7.0';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More' };
+const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look' };
 
 export class Panels {
   constructor(app) {
@@ -371,6 +372,42 @@ export class Panels {
     if (this.name === 'sun') this.render('sun');
   }
 
+  // ---- look: render style and lighting ------------------------------------------
+
+  look() {
+    const L = this.app.look, s = L.state, st = L.style;
+    const seg = (key, opts, cur) => `<div class="seg">${Object.entries(opts).map(([k, n]) =>
+      `<button data-set="${key}" data-val="${k}" class="${cur === k ? 'on' : ''}">${n}</button>`).join('')}</div>`;
+    let h = '<div class="menu stylelist">' + Object.entries(STYLES).map(([k, d]) =>
+      `<button data-style="${k}" class="${s.style === k ? 'on' : ''}"><b>${s.style === k ? '✓ ' : ''}${d.label}</b><small>${d.note}</small></button>`).join('') + '</div>';
+    h += '<p class="note" style="margin-top:12px">Background</p>' + seg('bg', BACKGROUNDS, L.bg);
+    h += '<p class="note">Ground</p>' + seg('ground', GROUNDS, L.ground);
+    h += `<label class="toggle">Soft shadows in corners (ambient occlusion)<input type="checkbox" data-k="ao" ${L.ao ? 'checked' : ''}></label>`;
+    h += `<label class="toggle">Sun shadows<input type="checkbox" data-k="shadows" ${this.v.shadows ? 'checked' : ''}></label>`;
+    h += `<label class="toggle">Edge lines<input type="checkbox" data-k="edges" ${L.edges ? 'checked' : ''}></label>`;
+    if (st.tone) h += `<div class="field"><label>Brightness</label><input type="range" data-k="exposure" min="0.5" max="1.8" step="0.05" value="${s.exposure}"><output>${s.exposure.toFixed(2)}</output></div>`;
+    h += '<p class="note">Soft corners are off on phones unless you switch them on (they cost battery). In See inside and X-ray they pause.</p>';
+    this.body.innerHTML = h;
+    this.body.onclick = e => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.style) { L.setStyle(b.dataset.style); return this.render('look', true); }
+      if (b.dataset.set) { L.set(b.dataset.set, b.dataset.val); return this.render('look', true); }
+    };
+    this.body.oninput = e => {
+      const k = e.target.dataset.k;
+      if (k === 'ao') L.set('ao', e.target.checked);
+      if (k === 'edges') L.set('edges', e.target.checked);
+      if (k === 'exposure') { L.set('exposure', +e.target.value); e.target.nextElementSibling.textContent = (+e.target.value).toFixed(2); }
+      if (k === 'shadows') {
+        const S = this.sunState;
+        S.shadows = e.target.checked;
+        this.v.setShadows(S.shadows);
+        this.applySun();
+      }
+    };
+  }
+
   // ---- settings --------------------------------------------------------------
 
   settings() {
@@ -391,9 +428,9 @@ export class Panels {
     this.body.innerHTML = h;
     this.body.onchange = e => {
       const k = e.target.dataset.k;
-      if (k === 'edges') v.setEdges(e.target.checked);
+      if (k === 'edges') app.look.set('edges', e.target.checked);
       if (k === 'unit') { setUnit(e.target.value); app.onUnit(); }
-      if (k === 'pr') { v.pixelRatio = +e.target.value; v.renderer.setPixelRatio(v.pixelRatio); v.resize(); }
+      if (k === 'pr') { v.pixelRatio = +e.target.value; v.setPixelRatio(v.pixelRatio); }
       if (k === 'eye') app.walk.eye = +e.target.value || 1.6;
       if (k === 'shotScale') app.shotScale = +e.target.value;
     };

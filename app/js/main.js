@@ -6,6 +6,7 @@ import { SectionTool, MeasureTool, WalkTool } from './tools.js';
 import { MoveTool } from './transform.js';
 import { Sequence } from './sequence.js';
 import { History } from './history.js';
+import { Look } from './look.js';
 import { screenshot, Recorder, showSave } from './capture.js';
 import { saveRecent, listRecent, getRecent, deleteRecent, getSetting, setSetting } from './store.js';
 import { Panels, esc } from './panels.js';
@@ -41,6 +42,8 @@ const app = window.app = {
 };
 app.history = new History(app);
 app.panels = new Panels(app);
+app.look = new Look(app);
+app.look.apply();
 app.move.onBeforeChange = label => app.history.record(label);
 app.move.onNoChange = () => app.history.dropLast();
 
@@ -455,7 +458,7 @@ $('#tools').onclick = async e => {
   if (!b) return;
   const t = b.dataset.tool;
   if (!viewer.root && t !== 'settings') return toast('Open a model first');
-  if (['layers', 'tree', 'section', 'sun', 'settings'].includes(t)) {
+  if (['layers', 'tree', 'section', 'sun', 'settings', 'look'].includes(t)) {
     if (app.tool === 'walk' || app.tool === 'measure' || app.tool === 'build') exitTools();
     return togglePanel(t);
   }

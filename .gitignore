@@ -4,3 +4,4 @@ sketchup/dist/
 sketchup/src/modelviewer/paths.rb
 .claude/
 __pycache__/
+backups/
