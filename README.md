@@ -217,6 +217,23 @@ share a face can still meet; nudging one by 1 mm in SketchUp settles it.
   Set it in SketchUp (Window › Model Info › Geo-location) and the export carries it.
 - Very large models: Rev05 (2,866 objects, 166k triangles, 4.3 MB) runs fine; past ~1M triangles phones slow down.
 
+## SketchUp: the same flush joints and flicker fix in the model itself
+
+`sketchup/tools/flush_joints.rb` does in SketchUp what the viewer does on screen. In SketchUp: Window › Ruby Console,
+paste `load 'C:/Users/ARKAR/Desktop/ModelViewer/sketchup/tools/flush_joints.rb'` and press Enter. That adds
+**Extensions › Flush joints**:
+
+| Command | What it does |
+|---|---|
+| Preview (count only) | How many joint lines and faces would change; nothing changes |
+| Hide joints and paint flush parts | Hides the lines between flush parts (real corners, frames, sills keep theirs) and gives faces running on flush into a wall the wall's paint. One Undo step |
+| Restore lines and colours | Every hidden line and changed colour back, also after saving |
+| Flicker: preview / fix / restore | Where a smaller part's face overlaps a bigger part's face in the same plane: hidden if fully covered with the same paint, else moved 1 mm forward. Run after the joint fix. One Undo step; restore puts it back |
+
+Hidden lines come back with View › Hidden Geometry while it is on. Components are changed only where every copy
+qualifies. Which parts count as walls (their paint spreads): names or tags matching `WALL` at the top of the
+script; edit it to suit other naming.
+
 ## For later changes
 
 - three.js lives in `app/vendor/three` (r180), openskp 1.3.0 + earcut 3.2.4, fflate 0.8.3, flatbuffers 25.9.23 in
