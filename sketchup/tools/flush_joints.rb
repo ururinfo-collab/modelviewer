@@ -12,7 +12,8 @@
 #     MVJoints.apply       # one Undo step (Edit > Undo takes it back)
 #     MVJoints.restore     # every line and colour back as it was
 #     MVJoints.export      # save a copy with all of it applied (<name>_clean.skp), optionally with the colours
-#                          # from a Model Viewer look file (Save › Save file for SketchUp); the open model is not changed
+#                          # from a Model Viewer look file (Save › Save file for SketchUp); save your model first,
+#                          # it is opened again exactly as saved afterwards
 #     MVJoints.flicker_preview / MVJoints.flicker_apply / MVJoints.flicker_restore
 #                          # flickering faces: where a smaller part's face overlaps a bigger part's face in the same
 #                          # plane, it is hidden (fully covered, same paint) or moved 1 mm forward (one Undo step;
@@ -28,6 +29,7 @@
 # when its side runs into the solid. A component's edge is hidden only if that is true for every copy of it.
 require 'set'
 require 'json'
+require 'tmpdir'
 
 module MVJoints
   # loading the file again (after an update) replaces these quietly
@@ -255,9 +257,8 @@ module MVJoints
 
   # ---- clean copy -------------------------------------------------------------------------------------------
   # Saves a copy of the model with everything applied (the colours from a Model Viewer look file if you pick
-  # one, then joints, flicker fix, joints again) under a new name, for showing or sending. The open model is
-  # left exactly as it was: the work is done inside one operation that is taken back after the copy is saved,
-  # so nothing lands in your Undo list either.
+  # one, then joints, flicker fix, joints again) under a new name, for showing or sending. Your model must be
+  # saved first; afterwards it is opened again exactly as saved (see export_to).
   def export
     model = Sketchup.active_model
     base = model.path.empty? ? File.join(Dir.home, 'Desktop', "#{model.title.empty? ? 'Model' : model.title}.skp") : model.path
@@ -287,27 +288,45 @@ module MVJoints
     export_to(path, look)
   end
 
+  # The copy is made from your saved model; afterwards your file is opened again exactly as saved (taking the
+  # work back with Undo or an aborted operation is not reliable: SketchUp keeps the changes once a copy of a
+  # model this size has been saved in the middle of them). Your camera view is kept.
   def export_to(path, look = nil)
     model = Sketchup.active_model
+    orig = model.path
+    if orig.empty? || model.modified?
+      return UI.messagebox("Please save your model first (File › Save), then run Save a clean copy again.\n\n" \
+                           'The clean copy is made from your saved file, and your file is opened again afterwards, ' \
+                           'exactly as saved.')
+    end
+    cam = model.active_view.camera
+    view = Sketchup::Camera.new(cam.eye, cam.target, cam.up, cam.perspective?, cam.fov)
     t0 = Time.now
     @export = true
     @faces = nil
     lines = more = sealed = hides = pushes = 0
     painted = nil
-    model.start_operation('Clean copy', true)
+    saved = false
     begin
-      painted = apply_look(model, look) if look
-      if look.nil? || look['joints'] != false
-        lines, = run(dry: false)
-        hides, pushes = flicker(dry: false) unless look && look['flicker'] == false
-        @faces = nil
-        more, sealed, = run(dry: false)
+      model.start_operation('Clean copy', true)
+      begin
+        painted = apply_look(model, look) if look
+        if look.nil? || look['joints'] != false
+          lines, = run(dry: false)
+          hides, pushes = flicker(dry: false) unless look && look['flicker'] == false
+          @faces = nil
+          more, sealed, = run(dry: false)
+        end
+        model.commit_operation
+      rescue StandardError
+        model.abort_operation
+        raise
       end
       saved = model.save_copy(path)
     ensure
-      model.abort_operation                      # the open model goes back to how it was
       @export = false
       @faces = nil
+      reopen(model, orig, view)
     end
     secs = (Time.now - t0).round(1)
     return UI.messagebox("The copy could not be saved to #{path}.") unless saved
@@ -319,7 +338,19 @@ module MVJoints
     end
     text += "#{lines + more} joint lines hidden, #{sealed} hairline gaps sealed, #{hides} flickering faces hidden and " \
             "#{pushes} moved 1 mm forward.\n" if look.nil? || look['joints'] != false
-    UI.messagebox(text + 'Your open model is unchanged.')
+    UI.messagebox(text + 'Your model is open again exactly as you saved it.')
+  end
+
+  # park the worked-on model in a temporary file (so opening yours does not ask to save it), open yours again
+  def reopen(model, orig, view)
+    tmp = File.join(Dir.tmpdir, "mv_clean_work_#{Process.pid}.skp")
+    model.save(tmp)
+    Sketchup.open_file(orig)
+    Sketchup.active_model.active_view.camera = view
+    [tmp, tmp.sub(/\.skp\z/, '.skb')].each { |f| File.delete(f) if File.exist?(f) }
+  rescue StandardError => e
+    UI.messagebox("Your model could not be opened again by itself (#{e.message}). Please open #{orig} again; " \
+                  'do not save the open one over it.')
   end
 
   # The colours picked in Model Viewer: a paint recoloured everywhere it is used, or one object (and everything
@@ -365,26 +396,20 @@ module MVJoints
     model.materials[name] || model.materials.add(name).tap { |m| m.color = rgb(to) }
   end
 
-  # the groups / components along a path of names (the viewer adds levels of its own on top, such as ROOT and the
-  # model's name: tried without them)
+  # the groups / components along a path of names. A name with no group of its own in SketchUp is a level the
+  # viewer added (ROOT, or "D1 GF" gathering the parts named "D1 GF ..."): it is stepped over.
   def by_path(ents, path)
-    [path.size, 4].min.times do |skip|
-      segs = path.drop(skip)
-      break if segs.empty?
-      level = [ents]
-      found = []
-      segs.each_with_index do |seg, i|
-        hits = level.flat_map do |es|
-          es.select { |e| (e.is_a?(Sketchup::Group) || e.is_a?(Sketchup::ComponentInstance)) && label_of(e) == seg }
-        end
-        break if hits.empty?
-        if i == segs.size - 1 then found = hits
-        else level = hits.map { |h| h.definition.entities }
-        end
+    level = [ents]
+    found = []
+    path.each_with_index do |seg, i|
+      hits = level.flat_map do |es|
+        es.select { |e| (e.is_a?(Sketchup::Group) || e.is_a?(Sketchup::ComponentInstance)) && label_of(e) == seg }
       end
-      return found unless found.empty?
+      if i == path.size - 1 then found = hits
+      elsif hits.any? then level = hits.map { |h| h.definition.entities }
+      end
     end
-    []
+    found
   end
 
   def label_of(e) = e.name.empty? ? e.definition.name : e.name

@@ -48,11 +48,13 @@ Lessons from this model:
 
 1.25.0 (28.10): **Save** panel in the viewer (`app/js/export.js`): .glb of what is shown (GLTFExporter vendored,
 part nodes carry `extras.mv`, geometry nodes `extras.mvMesh` so the loader folds them into their part) and a
-`.mvlook.json` look file. SketchUp `MVJoints.export` / Extensions › Flush joints › Save a clean copy applies a look
-file + joints + flicker inside one operation, `save_copy`, then `abort_operation`. **Not yet run inside SketchUp**
-(SketchUp was closed): first time, check with the bridge that the copy has the changes and the open model does not
-(save_copy inside an open operation was the untested assumption; probe test: add a group in an operation,
-save_copy, abort, `definitions.load` the copy inside another aborted operation and look for the group).
+`.mvlook.json` look file. SketchUp `MVJoints.export` / Extensions › Flush joints › Save a clean copy: needs the
+model saved; applies look file + joints + flicker + joints (one operation, committed), `save_copy`, then saves the
+worked model to a temp file and opens the original again, camera restored. Tested through the bridge on copies of
+Rev05 (28.10): copy correct (wall paint, door by path, 22,755 lines, seals, flicker), original reopened unchanged.
+Why not abort: joints + flicker + joints + save_copy in one operation leaves the changes in place after
+`abort_operation` and `Sketchup.undo` (each smaller combination aborts fine). Viewer paths contain levels SketchUp
+lacks (ROOT, name groups like "D1 GF"): `by_path` steps over names it cannot find.
 
 Open offer to Lucie: keep slab edges (the floor band) out of the wall paint if she wants the band grey.
 Possible later: install the script permanently in SketchUp's Plugins folder (only with her OK).
