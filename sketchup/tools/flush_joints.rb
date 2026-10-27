@@ -27,6 +27,8 @@
 require 'set'
 
 module MVJoints
+  # loading the file again (after an update) replaces these quietly
+  %i[ATTR TOL SAME WALL NOT_WALL PUSH NEIGH CELL].each { |k| remove_const(k) if const_defined?(k, false) }
   ATTR = 'mv_joints'
   TOL = 15.mm                       # SketchUp lengths are inches; 15 mm
   SAME = 0.999
@@ -231,10 +233,15 @@ module MVJoints
     buckets = {}
     conts.each do |c|
       c[:defn].entities.grep(Sketchup::Edge).each do |e|
-        next if e.hidden? || e.soft? || e.smooth?
+        next if e.soft? || e.smooth?
+        # lines this script hid before still count as partners (a rerun must see both sides of a joint);
+        # lines hidden by you are left alone
+        done = e.hidden?
+        next if done && !e.get_attribute(ATTR, 'hidden')
         r = edge_record(c, e)
         next unless r
-        edges << r
+        r[:done] = done
+        edges << r unless done
         (buckets[r[:key]] ||= []) << r
       end
     end
