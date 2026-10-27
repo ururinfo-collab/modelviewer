@@ -519,7 +519,8 @@ module MVJoints
       step = er[:len] / steps
       ok = lambda do |k|
         pt = add(add(er[:p0], er[:d], step * (k + 0.5)), f, -0.04)
-        other = covering(pt, n, er[:c])
+        # the surface may carry on in the same group too (a gable panel made of several pieces)
+        other = covering(pt, n, er[:c], allow_own: true)
         next false unless other
         next true unless s
         side = dot(sub(other[:centre].to_a, pt), n)
@@ -562,7 +563,7 @@ module MVJoints
     [*n.map { |x| (x * s * 100).round }, (o * s / 0.2).round]
   end
 
-  def covering(pt, n, own)
+  def covering(pt, n, own, allow_own: false)
     s = n.find { |x| x.abs > 1e-9 } || 1.0
     s = s.negative? ? -1.0 : 1.0
     base = n.map { |x| (x * s * 100).round }
@@ -570,7 +571,7 @@ module MVJoints
     cell = pt.map { |x| (x / CELL).floor }
     (-3..3).each do |k|
       (@faces[[*base, o + k, *cell]] || []).each do |c, f|
-        next if c.equal?(own)
+        next if c.equal?(own) && !allow_own
         lp = Geom::Point3d.new(*pt).transform(c[:inv])
         next unless (f.plane[0] * lp.x + f.plane[1] * lp.y + f.plane[2] * lp.z + f.plane[3]).abs < TOL
         r = f.classify_point(lp)
