@@ -1,10 +1,10 @@
 // Offline cache for the app itself (models are kept in IndexedDB by the page),
 // and Android's share target: files shared to the installed app are parked for the page to pick up.
-const VERSION = 'mv-1.24.0';   // bump after changing any app file, so phones fetch the new copy
+const VERSION = 'mv-1.25.0';   // bump after changing any app file, so phones fetch the new copy
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/main.js', 'js/viewer.js', 'js/loaders.js', 'js/tools.js', 'js/transform.js', 'js/capture.js',
-  'js/panels.js', 'js/sequence.js', 'js/history.js', 'js/look.js', 'js/quantities.js', 'js/compare.js', 'js/notes.js', 'js/ar.js', 'js/ai.js', 'js/share.js', 'js/present.js', 'js/joints.js', 'js/colours.js', 'js/explode.js', 'js/levels.js', 'js/store.js', 'js/icons.js', 'js/categories.js', 'js/units.js', 'js/sun.js',
+  'js/panels.js', 'js/sequence.js', 'js/history.js', 'js/look.js', 'js/quantities.js', 'js/compare.js', 'js/notes.js', 'js/ar.js', 'js/ai.js', 'js/share.js', 'js/present.js', 'js/joints.js', 'js/colours.js', 'js/explode.js', 'js/levels.js', 'js/export.js', 'js/store.js', 'js/icons.js', 'js/categories.js', 'js/units.js', 'js/sun.js',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
   'vendor/three/build/three.module.min.js', 'vendor/three/build/three.core.min.js',
   'vendor/three/examples/jsm/controls/OrbitControls.js', 'vendor/three/examples/jsm/controls/TransformControls.js',
@@ -16,7 +16,7 @@ const SHELL = [
   'vendor/three/examples/jsm/postprocessing/MaskPass.js', 'vendor/three/examples/jsm/shaders/CopyShader.js',
   'vendor/three/examples/jsm/shaders/GTAOShader.js', 'vendor/three/examples/jsm/shaders/PoissonDenoiseShader.js',
   'vendor/three/examples/jsm/shaders/OutputShader.js', 'vendor/three/examples/jsm/math/SimplexNoise.js',
-  'vendor/three/examples/jsm/environments/RoomEnvironment.js',
+  'vendor/three/examples/jsm/environments/RoomEnvironment.js', 'vendor/three/examples/jsm/exporters/GLTFExporter.js',
   'vendor/openskp/openskp.mjs', 'vendor/openskp/earcut.mjs', 'vendor/openskp/fflate.mjs', 'vendor/openskp/flatbuffers.mjs',
 ];
 

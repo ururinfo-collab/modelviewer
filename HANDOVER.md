@@ -9,7 +9,7 @@ that applies the viewer's "one plastered surface" look and flicker fix to the .s
 - Folder: `C:\Users\ARKAR\Desktop\ModelViewer` (git, branch main)
 - Live: https://ururinfo-collab.github.io/modelviewer/ (repo ururinfo-collab/modelviewer, GitHub Pages via Actions,
   publishes `app/` on every push to main; git credential is stored on the PC)
-- Live app version: **1.24.0**. Main is 2 commits ahead of GitHub (SketchUp script only, the app did not change).
+- Live app version: **1.25.0** (Save: .glb and look file for SketchUp).
 
 ## Release routine (app)
 - No build step: three.js r180 and openskp are vendored in `app/vendor`. Edit, reload.
@@ -45,6 +45,14 @@ Lessons from this model:
 - The flicker fix pushes faces 1 mm forward, so "covered" checks project the point onto the face, but also
   require the part's side face to run into the other part's box (keeps the house corners).
 - Check covered along the whole line (beam edges are covered only where they pass columns).
+
+1.25.0 (28.10): **Save** panel in the viewer (`app/js/export.js`): .glb of what is shown (GLTFExporter vendored,
+part nodes carry `extras.mv`, geometry nodes `extras.mvMesh` so the loader folds them into their part) and a
+`.mvlook.json` look file. SketchUp `MVJoints.export` / Extensions › Flush joints › Save a clean copy applies a look
+file + joints + flicker inside one operation, `save_copy`, then `abort_operation`. **Not yet run inside SketchUp**
+(SketchUp was closed): first time, check with the bridge that the copy has the changes and the open model does not
+(save_copy inside an open operation was the untested assumption; probe test: add a group in an operation,
+save_copy, abort, `definitions.load` the copy inside another aborted operation and look for the group).
 
 Open offer to Lucie: keep slab edges (the floor band) out of the wall paint if she wants the band grey.
 Possible later: install the script permanently in SketchUp's Plugins folder (only with her OK).

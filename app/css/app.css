@@ -202,7 +202,7 @@ body.walking #tools, body.walking #scenesWrap, body.walking #dock { display: non
 #shCode, #shTitle { width: 100%; min-width: 0; }
 /* a client's view-only copy: nothing that changes or opens files */
 body.client #btnOpen, body.client [data-tool=compare], body.client [data-tool=qty], body.client [data-tool=ai],
-body.client [data-tool=share], body.client [data-sel=move], body.client [data-cx=move],
+body.client [data-tool=share], body.client [data-tool=export], body.client [data-sel=move], body.client [data-cx=move],
 body.client #noteDlg [data-nd=photo], body.client #noteDlg [data-nd=nophoto], body.client #noteDlg [data-nd=save] { display: none !important; }
 body.client #title::after { content: 'View only'; margin-left: 8px; font-size: 11px; font-weight: 600; color: #fff; background: var(--accent);
   padding: 2px 7px; border-radius: 8px; vertical-align: 2px; }

@@ -11,6 +11,8 @@
 #     MVJoints.preview     # counts only, changes nothing
 #     MVJoints.apply       # one Undo step (Edit > Undo takes it back)
 #     MVJoints.restore     # every line and colour back as it was
+#     MVJoints.export      # save a copy with all of it applied (<name>_clean.skp), optionally with the colours
+#                          # from a Model Viewer look file (Save › Save file for SketchUp); the open model is not changed
 #     MVJoints.flicker_preview / MVJoints.flicker_apply / MVJoints.flicker_restore
 #                          # flickering faces: where a smaller part's face overlaps a bigger part's face in the same
 #                          # plane, it is hidden (fully covered, same paint) or moved 1 mm forward (one Undo step;
@@ -25,6 +27,7 @@
 # Parts may be up to 15 mm apart. An edge lying inside another part's face (a column passing a beam end) also goes
 # when its side runs into the solid. A component's edge is hidden only if that is true for every copy of it.
 require 'set'
+require 'json'
 
 module MVJoints
   # loading the file again (after an update) replaces these quietly
@@ -119,7 +122,7 @@ module MVJoints
                     "(#{secs} s)\n\nRun MVJoints.flicker_apply to do it.")
       return
     end
-    model.start_operation('Flicker fix', true)
+    model.start_operation('Flicker fix', true) unless @export     # a clean copy runs inside its own operation
     begin
       todo.each do |f, action, dist|
         next unless f.valid?
@@ -131,11 +134,12 @@ module MVJoints
           f.pushpull(dist)
         end
       end
-      model.commit_operation
+      model.commit_operation unless @export
     rescue StandardError => e
-      model.abort_operation
+      model.abort_operation unless @export
       raise e
     end
+    return [hides, pushes] if @export
     UI.messagebox("Flicker fix: hid #{hides} fully covered faces and moved #{pushes} faces #{PUSH.to_mm.round(1)} mm forward (#{secs} s).\n" \
                   "Edit > Undo takes it back; MVJoints.flicker_restore puts them back later.")
   end
@@ -249,6 +253,156 @@ module MVJoints
     run(dry: false)
   end
 
+  # ---- clean copy -------------------------------------------------------------------------------------------
+  # Saves a copy of the model with everything applied (the colours from a Model Viewer look file if you pick
+  # one, then joints, flicker fix, joints again) under a new name, for showing or sending. The open model is
+  # left exactly as it was: the work is done inside one operation that is taken back after the copy is saved,
+  # so nothing lands in your Undo list either.
+  def export
+    model = Sketchup.active_model
+    base = model.path.empty? ? File.join(Dir.home, 'Desktop', "#{model.title.empty? ? 'Model' : model.title}.skp") : model.path
+    look = nil
+    ask = UI.messagebox("Use a look file from Model Viewer (your colours, Save › Save file for SketchUp)?\n\n" \
+                        'Yes: pick the .mvlook.json file.   No: joints and flicker fix only.', MB_YESNOCANCEL)
+    return if ask == IDCANCEL
+    if ask == IDYES
+      downloads = File.join(Dir.home, 'Downloads')
+      file = UI.openpanel('Look file from Model Viewer', Dir.exist?(downloads) ? downloads : File.dirname(base),
+                          'Model Viewer look|*.json||')
+      return unless file
+      begin
+        look = JSON.parse(File.read(file, encoding: 'UTF-8'))
+        raise 'not a Model Viewer look file' unless look['format'].to_s.start_with?('mv-look')
+      rescue StandardError => e
+        return UI.messagebox("That file could not be read (#{e.message}).")
+      end
+    end
+    path = UI.savepanel('Save a clean copy (joint lines hidden, flicker fixed)', File.dirname(base),
+                        "#{File.basename(base, '.*')}_clean.skp")
+    return unless path
+    path += '.skp' unless path.downcase.end_with?('.skp')
+    if !model.path.empty? && File.expand_path(path).casecmp?(File.expand_path(model.path))
+      return UI.messagebox("That is the open file itself. Pick another name, so your working model stays as it is.")
+    end
+    export_to(path, look)
+  end
+
+  def export_to(path, look = nil)
+    model = Sketchup.active_model
+    t0 = Time.now
+    @export = true
+    @faces = nil
+    lines = more = sealed = hides = pushes = 0
+    painted = nil
+    model.start_operation('Clean copy', true)
+    begin
+      painted = apply_look(model, look) if look
+      if look.nil? || look['joints'] != false
+        lines, = run(dry: false)
+        hides, pushes = flicker(dry: false) unless look && look['flicker'] == false
+        @faces = nil
+        more, sealed, = run(dry: false)
+      end
+      saved = model.save_copy(path)
+    ensure
+      model.abort_operation                      # the open model goes back to how it was
+      @export = false
+      @faces = nil
+    end
+    secs = (Time.now - t0).round(1)
+    return UI.messagebox("The copy could not be saved to #{path}.") unless saved
+    text = "Saved a clean copy (#{secs} s):\n#{path}\n\n"
+    if painted
+      text += "Colours from Model Viewer: #{painted[:mats]} paints and #{painted[:objs]} objects changed"
+      text += painted[:missed].empty? ? ".\n" : "; not found in this model: #{painted[:missed].first(6).join(', ')}" \
+                                                 "#{painted[:missed].size > 6 ? '...' : ''}.\n"
+    end
+    text += "#{lines + more} joint lines hidden, #{sealed} hairline gaps sealed, #{hides} flickering faces hidden and " \
+            "#{pushes} moved 1 mm forward.\n" if look.nil? || look['joints'] != false
+    UI.messagebox(text + 'Your open model is unchanged.')
+  end
+
+  # The colours picked in Model Viewer: a paint recoloured everywhere it is used, or one object (and everything
+  # inside it) in a colour of its own. Objects are found by SketchUp's persistent id, else by their path of names.
+  def apply_look(model, look)
+    res = { mats: 0, objs: 0, missed: [] }
+    col = look['colours'] || {}
+    (col['materials'] || []).each do |m|
+      # by name; a .skp opened in the viewer has no paint names, so then by the original colour (the viewer
+      # recolours every paint of that colour too)
+      mats = m['name'].to_s.empty? ? [] : model.materials.select { |x| x.name == m['name'] || x.display_name == m['name'] }
+      mats = model.materials.select { |x| x.texture.nil? && near?(x.color, m['was']) } if mats.empty? && m['was']
+      next res[:missed] << (m['name'].to_s.empty? ? m['was'] : m['name']) if mats.empty?
+      mats.each { |x| x.color = rgb(m['to']) }
+      res[:mats] += mats.size
+    end
+    (col['objects'] || []).each do |o|
+      found = []
+      if o['pid'] && model.respond_to?(:find_entity_by_persistent_id)
+        e = model.find_entity_by_persistent_id(o['pid'].to_i)
+        found << e if e.is_a?(Sketchup::Group) || e.is_a?(Sketchup::ComponentInstance)
+      end
+      found = by_path(model.entities, o['path'] || []) if found.empty?
+      next res[:missed] << (o['path'] || []).last.to_s if found.empty?
+      paint = colour_material(model, o['to'])
+      found.each { |inst| paint_inside(inst, paint) }
+      res[:objs] += 1
+    end
+    res
+  end
+
+  # same colour give or take rounding (the viewer turns colours to linear and back)
+  def near?(c, hex)
+    h = hex.to_s.delete('#')
+    return false unless h.size == 6
+    [c.red, c.green, c.blue].zip(h.scan(/../).map { |x| x.to_i(16) }).all? { |a, b| (a - b).abs <= 2 }
+  end
+
+  def rgb(hex) = Sketchup::Color.new(*hex.to_s.delete('#').scan(/../).first(3).map { |x| x.to_i(16) })
+
+  def colour_material(model, to)
+    name = "MV #{to.downcase}"
+    model.materials[name] || model.materials.add(name).tap { |m| m.color = rgb(to) }
+  end
+
+  # the groups / components along a path of names (the viewer adds levels of its own on top, such as ROOT and the
+  # model's name: tried without them)
+  def by_path(ents, path)
+    [path.size, 4].min.times do |skip|
+      segs = path.drop(skip)
+      break if segs.empty?
+      level = [ents]
+      found = []
+      segs.each_with_index do |seg, i|
+        hits = level.flat_map do |es|
+          es.select { |e| (e.is_a?(Sketchup::Group) || e.is_a?(Sketchup::ComponentInstance)) && label_of(e) == seg }
+        end
+        break if hits.empty?
+        if i == segs.size - 1 then found = hits
+        else level = hits.map { |h| h.definition.entities }
+        end
+      end
+      return found unless found.empty?
+    end
+    []
+  end
+
+  def label_of(e) = e.name.empty? ? e.definition.name : e.name
+
+  # this copy only: its own definition, every face inside in the new paint
+  def paint_inside(inst, paint)
+    inst.make_unique if inst.definition.instances.size > 1
+    inst.material = paint
+    inst.definition.entities.each do |e|
+      if e.is_a?(Sketchup::Face)
+        e.material = paint
+        e.back_material = paint if e.back_material
+      elsif e.is_a?(Sketchup::Group) || e.is_a?(Sketchup::ComponentInstance)
+        paint_inside(e, paint)
+      end
+    end
+  end
+
   def restore
     model = Sketchup.active_model
     model.start_operation('Restore flush joints', true)
@@ -336,7 +490,7 @@ module MVJoints
                     "#{conts.size} groups and components looked at in #{secs} s.\n\nRun MVJoints.apply to do it.")
       return
     end
-    model.start_operation('Flush joints', true)
+    model.start_operation('Flush joints', true) unless @export
     pieces = 0
     begin
       to_hide.each do |e|
@@ -358,11 +512,12 @@ module MVJoints
         f.material = orig.empty? ? nil : model.materials[orig]
         f.delete_attribute(ATTR, 'orig')
       end
-      model.commit_operation
+      model.commit_operation unless @export
     rescue StandardError => e
-      model.abort_operation
+      model.abort_operation unless @export
       raise e
     end
+    return [to_hide.size + pieces, sealed, painted] if @export
     back = unpaint.empty? ? '' : " (#{unpaint.size} faces painted earlier got their own colour back)"
     UI.messagebox("Hid #{to_hide.size} joint lines, plus #{pieces} joint pieces of #{to_split.size} long lines, sealed " \
                   "#{sealed} hairline gaps, and gave #{painted} faces the wall's paint#{back} (#{secs} s).\n" \
@@ -676,5 +831,7 @@ unless file_loaded?(__FILE__)
   menu.add_item('Flicker: preview (count only)') { MVJoints.flicker_preview }
   menu.add_item('Flicker: fix overlapping faces') { MVJoints.flicker_apply }
   menu.add_item('Flicker: restore') { MVJoints.flicker_restore }
+  menu.add_separator
+  menu.add_item('Save a clean copy...') { MVJoints.export }
   file_loaded(__FILE__)
 end

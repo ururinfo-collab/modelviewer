@@ -16,6 +16,7 @@ import { Colours, SWATCHES, hexOf } from './colours.js';
 import { Explode } from './explode.js';
 import { detectLevels } from './levels.js';
 import { screenshot, Recorder, showSave } from './capture.js';
+import { Exporter } from './export.js';
 import { saveRecent, listRecent, getRecent, deleteRecent, getSetting, setSetting } from './store.js';
 import { Panels, esc } from './panels.js';
 import { icon } from './icons.js';
@@ -477,7 +478,7 @@ $('#tools').onclick = async e => {
   if (!b) return;
   const t = b.dataset.tool;
   if (!viewer.root && t !== 'settings') return toast('Open a model first');
-  if (['layers', 'tree', 'section', 'sun', 'settings', 'look', 'qty', 'compare', 'notes', 'ai', 'share', 'floors'].includes(t)) {
+  if (['layers', 'tree', 'section', 'sun', 'settings', 'look', 'qty', 'compare', 'notes', 'ai', 'share', 'floors', 'export'].includes(t)) {
     if (app.tool === 'walk' || app.tool === 'measure' || app.tool === 'build') exitTools();
     return togglePanel(t);
   }
@@ -566,6 +567,7 @@ async function toggleRecord() {
 $('#recStop').onclick = toggleRecord;
 app.toggleRecord = toggleRecord;
 app.saveFile = f => showSave($('#saveDlg'), f);
+app.exporter = new Exporter(app);
 
 // ---- build (construction time-lapse) bar --------------------------------------
 

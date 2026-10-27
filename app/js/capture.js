@@ -125,14 +125,18 @@ export function drawCaption(ctx, w, h, { title, line2, progress }) {
 }
 
 // dialog with preview + Save / Share
-export function showSave(dlg, { blob, name }) {
+export function showSave(dlg, { blob, name, card }) {
   const isVideo = blob.type.startsWith('video'), isImage = blob.type.startsWith('image');
   const url = URL.createObjectURL(blob);
   const prev = dlg.querySelector('.preview');
+  const p = document.createElement('p');
+  p.className = 'filecard';
+  p.textContent = card || 'Spreadsheet file (CSV). Opens in Excel, Google Sheets or Numbers.';
   prev.innerHTML = isVideo ? `<video src="${url}" controls playsinline muted loop autoplay></video>`
-    : isImage ? `<img src="${url}" alt="">`
-    : '<p class="filecard">Spreadsheet file (CSV). Opens in Excel, Google Sheets or Numbers.</p>';
-  dlg.querySelector('.fname').textContent = `${name} · ${(blob.size / 1048576).toFixed(1)} MB`;
+    : isImage ? `<img src="${url}" alt="">` : '';
+  if (!isVideo && !isImage) prev.appendChild(p);
+  const size = blob.size < 1048576 ? `${Math.max(1, Math.round(blob.size / 1024))} KB` : `${(blob.size / 1048576).toFixed(1)} MB`;
+  dlg.querySelector('.fname').textContent = `${name} · ${size}`;
   const file = new File([blob], name, { type: blob.type });
   const canShare = !!(navigator.canShare && navigator.canShare({ files: [file] }));
   const share = dlg.querySelector('[data-act=share]');

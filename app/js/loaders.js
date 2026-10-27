@@ -50,7 +50,8 @@ async function loadGltf(main, data, manager, srcFrame = null) {
     if (o.userData.mv?.root) frameNode = o;
   });
   const meta = json.scenes?.[json.scene || 0]?.extras?.mv || null;
-  const isEntity = o => !!o.userData._node;
+  // a Model Viewer .glb keeps each part's geometry in nodes of their own (mvMesh): they belong to the part above
+  const isEntity = o => !!o.userData._node && !o.userData.mvMesh;
   const groups = groupAll(gltf.scene, isEntity);
   return {
     name: main.name, kind: meta ? 'sketchup' : 'gltf', root: gltf.scene, meta, groups, isEntity,

@@ -8,9 +8,9 @@ import { STYLES, BACKGROUNDS, GROUNDS, COLOURS } from './look.js';
 import { quantities, toCSV } from './quantities.js';
 import { PRESETS, GEMINI_MODELS } from './ai.js';
 
-export const APP_VERSION = '1.24.0';
+export const APP_VERSION = '1.25.0';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look', qty: 'Quantities', compare: 'Compare revisions', notes: 'Notes', ai: 'AI render', share: 'Client link', floors: 'Floors' };
+const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look', qty: 'Quantities', compare: 'Compare revisions', notes: 'Notes', ai: 'AI render', share: 'Client link', floors: 'Floors', export: 'Save' };
 
 export class Panels {
   constructor(app) {
@@ -817,6 +817,45 @@ export class Panels {
         (!gone && S.links[s.id] ? `<button class="ib" data-copy="${esc(s.id)}" data-icon="share" title="Copy the link"></button>` : '') +
         (!gone || gone === 'unfinished' ? `<button class="ib" data-revoke="${esc(s.id)}" data-icon="trash" title="${gone ? 'Remove' : 'Withdraw the link'}"></button>` : '') + '</div>';
     }).join('');
+  }
+
+  // ---- save / export ---------------------------------------------------------
+
+  export() {
+    const app = this.app, v = this.v, X = app.exporter;
+    const nc = app.colours?.count || 0;
+    let h = '<p class="note">A web page cannot write .skp files (only SketchUp can), so there are two ways to keep what you see.</p>';
+    h += '<p class="note" style="margin-top:12px"><b>3D file (.glb)</b><br>Exactly what is shown: your colours, the plastered look' +
+      `${v.showJoints ? '' : ' (no joint lines)'}, hidden parts left out. Opens in Model Viewer, Blender, Windows 3D Viewer; easy to send.</p>`;
+    h += '<div class="btnrow"><button class="btn primary" data-act="glb">Save 3D file</button></div>';
+    h += '<p class="note" style="margin-top:16px"><b>For SketchUp (.skp)</b><br>A small look file with ' +
+      `${nc ? `your ${nc} colour change${nc > 1 ? 's' : ''}` : 'no colour changes yet'} and the joint setting. In SketchUp: ` +
+      'Extensions › Flush joints › <b>Save a clean copy</b>, pick this file: it saves <i>name</i>_clean.skp with your colours, ' +
+      'joint lines hidden and flicker fixed. Your own .skp is not changed.</p>';
+    h += '<div class="btnrow"><button class="btn" data-act="look">Save file for SketchUp</button></div>';
+    h += '<p class="note" id="exStatus"></p>';
+    this.body.innerHTML = h;
+    const say = s => { const el = this.body.querySelector('#exStatus'); if (el) el.textContent = s; };
+    this.body.onclick = async e => {
+      const b = e.target.closest('button[data-act]');
+      if (!b) return;
+      if (b.dataset.act === 'look') {
+        const f = X.lookFile();
+        return app.saveFile({ ...f, card: 'Look file for SketchUp (Extensions › Flush joints › Save a clean copy).' });
+      }
+      if (b.dataset.act === 'glb') {
+        b.disabled = true;
+        say('Making the 3D file...');
+        try {
+          const f = await X.glb();
+          say('');
+          app.saveFile({ ...f, card: `3D file (glTF binary), ${f.parts} parts. Opens in Model Viewer, Blender, Windows 3D Viewer.` });
+        } catch (err) {
+          console.error(err);
+          say(`Could not make the 3D file: ${err.message}`);
+        } finally { b.disabled = false; }
+      }
+    };
   }
 
   // ---- settings --------------------------------------------------------------
