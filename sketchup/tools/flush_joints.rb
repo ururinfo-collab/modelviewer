@@ -610,8 +610,7 @@ module MVJoints
         q.x > bb.min.x + m && q.x < bb.max.x - m && q.y > bb.min.y + m && q.y < bb.max.y - m &&
           q.z > bb.min.z + m && q.z < bb.max.z - m
       end
-      # a quick look at both ends and the middle first: most edges have nothing there
-      next unless [0, steps / 2, steps - 1].uniq.any? { |k| ok.call(k) }
+      # every step: a beam's long edge is covered only where it passes the columns, anywhere along it
       steps.times { |k| found << [step * k, step * (k + 1)] if ok.call(k) }
     end
     found
