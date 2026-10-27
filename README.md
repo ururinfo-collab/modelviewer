@@ -232,7 +232,17 @@ paste `load 'C:/Users/ARKAR/Desktop/ModelViewer/sketchup/tools/flush_joints.rb'`
 
 Hidden lines come back with View › Hidden Geometry while it is on. Components are changed only where every copy
 qualifies. Which parts count as walls (their paint spreads): names or tags matching `WALL` at the top of the
-script; edit it to suit other naming.
+script; which parts take that paint: `PAINT` (columns, beams, slabs, panels) minus `NO_PAINT` (doors, windows,
+tiles, finishes, bands...). Edit them to suit other naming. A rerun gives back the colour of faces that no longer
+qualify, and remakes the **MV joint seals** group (thin strips in the wall's paint over hairline gaps up to 15 mm).
+
+Soft edges count too where a part turns a corner: with Profiles on in the style, SketchUp draws a profile line on a
+soft corner, so a soft joint at a wall panel's end still showed as a thick black line (Rev05: the column and panel
+lines left after the first runs).
+
+`sketchup/tools/mv_bridge.rb` (load the same way) lets Claude look into the open model while working on the script:
+it runs the small .rb files dropped in `sketchup/bridge/` and writes the answers there. `MVBridge.stop` ends it;
+it also stops after 2 hours without a request.
 
 ## For later changes
 

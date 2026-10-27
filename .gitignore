@@ -1,6 +1,7 @@
 # models and builds stay on this PC: the repository (and GitHub Pages) only carries the app
 exports/
 sketchup/dist/
+sketchup/bridge/
 sketchup/src/modelviewer/paths.rb
 .claude/
 __pycache__/

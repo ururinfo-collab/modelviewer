@@ -28,13 +28,16 @@ require 'set'
 
 module MVJoints
   # loading the file again (after an update) replaces these quietly
-  %i[ATTR TOL SAME WALL NOT_WALL PUSH NEIGH CELL].each { |k| remove_const(k) if const_defined?(k, false) }
+  %i[ATTR TOL SAME WALL NOT_WALL PAINT NO_PAINT PUSH NEIGH CELL].each { |k| remove_const(k) if const_defined?(k, false) }
   ATTR = 'mv_joints'
   TOL = 15.mm                       # SketchUp lengths are inches; 15 mm
   SAME = 0.999
   # parts whose paint spreads to flush columns, beams and slab edges (name or tag); edit to suit your naming
-  WALL = /wall|plaster|parapet|partition/i
+  WALL = /\bwall\b|walls and partitions|plaster|parapet|partition/i
   NOT_WALL = /tile|skirting|frame|window|door|sill|coping|footing/i
+  # parts that take the wall's paint where they run on flush into it (name or tag): the structure behind the plaster
+  PAINT = /S-COL|S-BEAM|S-SLAB|S-STEEL|column|beam|lintel|slab|panel|gable/i
+  NO_PAINT = /tile|skirting|frame|window|door|sill|coping|footing|band|finish|fill|hard ?core|sand|railing/i
 
   module_function
 
@@ -203,7 +206,7 @@ module MVJoints
     mine = nil
     conts.each do |c|
       c[:defn].entities.grep(Sketchup::Edge).each do |x|
-        next if x.soft? || x.smooth? || (x.hidden? && !x.get_attribute(ATTR, 'hidden'))
+        next if ((x.soft? || x.smooth?) && !corner?(x)) || (x.hidden? && !x.get_attribute(ATTR, 'hidden'))
         r = edge_record(c, x)
         next unless r
         (buckets[r[:key]] ||= []) << r
@@ -283,7 +286,7 @@ module MVJoints
     buckets = {}
     conts.each do |c|
       c[:defn].entities.grep(Sketchup::Edge).each do |e|
-        next if e.soft? || e.smooth?
+        next if (e.soft? || e.smooth?) && !corner?(e)
         # lines this script hid before still count as partners (a rerun must see both sides of a joint);
         # lines hidden by you are left alone
         done = e.hidden?
@@ -318,12 +321,18 @@ module MVJoints
     to_hide = hide_votes.select { |(d, _), v| v >= counts[d] }.keys.map(&:last)
     to_split = parts.reject { |key, _| hide_votes[key] >= counts[key[0]] }.map { |(_, e), v| [e, *v] }
     to_paint = paint.select { |(d, _), (_, v)| v.size >= counts[d] }.map { |(_, f), (m, _)| [f, m] }
+    # faces painted on an earlier run that no longer qualify get their own colour back
+    keep = to_paint.map(&:first).to_set
+    unpaint = conts.map { |c| c[:defn] }.uniq.flat_map do |d|
+      d.entities.grep(Sketchup::Face).select { |f| !f.get_attribute(ATTR, 'orig').nil? && !keep.include?(f) }
+    end
     secs = (Time.now - t0).round(1)
     if dry
       UI.messagebox("Preview (nothing changed):\n#{to_hide.size} joint lines would be hidden\n" \
                     "#{to_split.size} long lines would be hidden where they are a joint (cut there, rest stays)\n" \
                     "#{@seals.size} hairline gaps would be sealed\n" \
                     "#{to_paint.size} faces would take the wall's paint\n" \
+                    "#{unpaint.size} faces painted earlier would get their own colour back\n" \
                     "#{conts.size} groups and components looked at in #{secs} s.\n\nRun MVJoints.apply to do it.")
       return
     end
@@ -337,17 +346,26 @@ module MVJoints
       end
       to_split.each { |e, len, ints| pieces += hide_pieces(e, len, ints) }
       sealed = build_seals(model)
+      painted = 0
       to_paint.each do |f, m|
+        next if f.material == m
         f.set_attribute(ATTR, 'orig', f.material ? f.material.name : '') if f.get_attribute(ATTR, 'orig').nil?
         f.material = m
+        painted += 1
+      end
+      unpaint.each do |f|
+        orig = f.get_attribute(ATTR, 'orig')
+        f.material = orig.empty? ? nil : model.materials[orig]
+        f.delete_attribute(ATTR, 'orig')
       end
       model.commit_operation
     rescue StandardError => e
       model.abort_operation
       raise e
     end
+    back = unpaint.empty? ? '' : " (#{unpaint.size} faces painted earlier got their own colour back)"
     UI.messagebox("Hid #{to_hide.size} joint lines, plus #{pieces} joint pieces of #{to_split.size} long lines, sealed " \
-                  "#{sealed} hairline gaps, and gave #{to_paint.size} faces the wall's paint (#{secs} s).\n" \
+                  "#{sealed} hairline gaps, and gave #{painted} faces the wall's paint#{back} (#{secs} s).\n" \
                   "Edit > Undo takes it back; MVJoints.restore puts everything back later.\n" \
                   "View > Hidden Geometry shows the hidden lines again while it is on.")
   end
@@ -377,6 +395,13 @@ module MVJoints
   end
 
   def span_of(ints) = ints.sum { |lo, hi| hi - lo }
+
+  # A soft edge where its part turns a corner (a wall panel's end) is still drawn as a profile line when the
+  # style has Profiles on, so it counts like any other line. Soft edges across a curve or a flat face do not.
+  def corner?(e)
+    fs = e.faces
+    fs.size < 2 || (fs[0].normal % fs[1].normal).abs < 0.87
+  end
 
   # overlapping or touching stretches joined; pieces shorter than 1 cm dropped
   def merge(ints)
@@ -429,9 +454,11 @@ module MVJoints
       counts[d] += 1
       chain = path + [e]
       label = chain.map { |x| "#{x.name} #{x.layer && x.layer.name}" }.join(' ')
-      wall = label.match?(WALL) && !"#{e.name} #{d.name}".match?(NOT_WALL)
+      own = "#{e.name} #{d.name}"
+      wall = label.match?(WALL) && !own.match?(NOT_WALL)
+      paint = !wall && label.match?(PAINT) && !own.match?(NO_PAINT)
       bb = d.bounds
-      out << { inst: e, defn: d, tr: t, inv: t.inverse, wall: wall, centre: bb.center.transform(t), id: out.size } if d.entities.grep(Sketchup::Face).any?
+      out << { inst: e, defn: d, tr: t, inv: t.inverse, wall: wall, paint: paint, centre: bb.center.transform(t), id: out.size } if d.entities.grep(Sketchup::Face).any?
       collect(d.entities, t, out, counts, chain)
     end
   end
@@ -525,24 +552,25 @@ module MVJoints
         next unless s[3].equal?(er)
         here.each do |o|
           next if o[3].equal?(er) || dot(s[2], o[2]) > -SAME || o[3].object_id < er.object_id
+          # where the other face's edge lies, across from this face; ahead of it (inside this face) they overlap
           off = dot(sub(o[3][:p0], er[:p0]), s[2])
-          next if off.abs < 0.02                            # touching (under half a millimetre)
-          w0 = [0.0, off].min - 0.04                        # 1 mm onto each side
-          w1 = [0.0, off].max + 0.04
+          next if off > -0.02                               # touching (under half a millimetre) or overlapping
+          w0 = off - 0.04                                   # 1 mm onto each side
+          w1 = 0.04
           side = o[3][:c][:wall] ? o : s
           m = side[5].material || side[3][:c][:inst].material
           pts = [[lo, w0], [hi, w0], [hi, w1], [lo, w1]].map { |l, w| add(add(er[:p0], er[:d], l), s[2], w) }
           (@seals ||= []) << [pts, m]
         end
       end
-      # this part's face carries on into a wall's face: it takes the wall's paint
-      next if er[:c][:wall]
+      # this part's face carries on into a wall's face: it takes the wall's paint (columns, beams, slabs, panels)
+      next unless er[:c][:paint]
       here.each do |s|
         next unless s[3].equal?(er)
         o = here.find { |x| x[3][:c][:wall] && dot(s[2], x[2]) < -SAME }
         next unless o
         m = o[5].material || o[3][:c][:inst].material
-        next if m.nil? || m == s[5].material
+        next if m.nil?                              # already the wall's paint (an earlier run) still counts: it stays
         rec = (paint[[er[:c][:defn], s[5]]] ||= [m, Set.new])
         rec[1] << er[:c][:id] if rec[0] == m
       end
@@ -564,13 +592,23 @@ module MVJoints
       steps = [[(er[:len] / 4.0).ceil, 2].max, 40].min    # about every 10 cm, at most 40
       step = er[:len] / steps
       ok = lambda do |k|
-        pt = add(add(er[:p0], er[:d], step * (k + 0.5)), f, -0.04)
+        on = add(er[:p0], er[:d], step * (k + 0.5))
+        pt = add(on, f, -0.04)
         # the surface may carry on in the same group too (a gable panel made of several pieces)
         other = covering(pt, n, er[:c], allow_own: true)
         next false unless other
         next true unless s
-        side = dot(sub(other[:centre].to_a, pt), n)
-        (side.positive? && dot(s, n).positive?) || (side.negative? && dot(s, n).negative?)
+        if other.equal?(er[:c])
+          side = dot(sub(other[:centre].to_a, pt), n)
+          next (side.positive? && dot(s, n).positive?) || (side.negative? && dot(s, n).negative?)
+        end
+        # the part's other face must run into the other part's body (a column's side inside the beam), not along
+        # its outside (the corner of the house, where the column face only lies over a wall's face)
+        q = Geom::Point3d.new(*add(on, s, 0.5)).transform(other[:inv])
+        bb = other[:defn].bounds
+        m = 0.04
+        q.x > bb.min.x + m && q.x < bb.max.x - m && q.y > bb.min.y + m && q.y < bb.max.y - m &&
+          q.z > bb.min.z + m && q.z < bb.max.z - m
       end
       # a quick look at both ends and the middle first: most edges have nothing there
       next unless [0, steps / 2, steps - 1].uniq.any? { |k| ok.call(k) }
@@ -620,7 +658,8 @@ module MVJoints
         next if c.equal?(own) && !allow_own
         lp = Geom::Point3d.new(*pt).transform(c[:inv])
         next unless (f.plane[0] * lp.x + f.plane[1] * lp.y + f.plane[2] * lp.z + f.plane[3]).abs < TOL
-        r = f.classify_point(lp)
+        # up to 15 mm off the face (a face the flicker fix moved 1 mm forward): classify its foot on the face
+        r = f.classify_point(lp.project_to_plane(f.plane))
         return c if [Sketchup::Face::PointInside, Sketchup::Face::PointOnEdge].include?(r)
       end
     end
