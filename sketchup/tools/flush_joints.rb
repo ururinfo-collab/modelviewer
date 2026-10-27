@@ -264,8 +264,10 @@ module MVJoints
       end
     end
     model.entities.grep(Sketchup::Edge).each { |e| next unless e.get_attribute(ATTR, 'hidden'); e.hidden = false; e.delete_attribute(ATTR, 'hidden'); lines += 1 }
+    seals = model.entities.grep(Sketchup::Group).select { |g| g.get_attribute(ATTR, 'seals') }
+    seals.each(&:erase!)
     model.commit_operation
-    UI.messagebox("Restored #{lines} lines and #{faces} colours.")
+    UI.messagebox("Restored #{lines} lines and #{faces} colours#{seals.any? ? ', and removed the gap strips' : ''}.")
   end
 
   # ---------------------------------------------------------------------------------------------------------
@@ -289,7 +291,7 @@ module MVJoints
         r = edge_record(c, e)
         next unless r
         r[:done] = done
-        edges << r unless done
+        edges << r
         (buckets[r[:key]] ||= []) << r
       end
     end
@@ -297,8 +299,10 @@ module MVJoints
     hide_votes = Hash.new(0)        # [definition, edge] -> number of copies where the whole edge is a joint
     parts = {}                      # [definition, edge] -> joint stretches (one-copy parts only), from the edge's start
     paint = {}                      # [definition, face] -> [material, copies where it qualifies]
+    @seals = []                     # strips closing hairline gaps at joints: [4 world points, material]
     edges.each do |er|
       ints = sweep(er, buckets, paint)
+      next if er[:done]             # hidden on an earlier run: only its seals are made again
       ints += covered(er, conts) if span_of(ints) < er[:len] * 0.95
       ints = merge(ints)
       key = [er[:c][:defn], er[:e]]
@@ -318,6 +322,7 @@ module MVJoints
     if dry
       UI.messagebox("Preview (nothing changed):\n#{to_hide.size} joint lines would be hidden\n" \
                     "#{to_split.size} long lines would be hidden where they are a joint (cut there, rest stays)\n" \
+                    "#{@seals.size} hairline gaps would be sealed\n" \
                     "#{to_paint.size} faces would take the wall's paint\n" \
                     "#{conts.size} groups and components looked at in #{secs} s.\n\nRun MVJoints.apply to do it.")
       return
@@ -331,6 +336,7 @@ module MVJoints
         e.set_attribute(ATTR, 'hidden', true)
       end
       to_split.each { |e, len, ints| pieces += hide_pieces(e, len, ints) }
+      sealed = build_seals(model)
       to_paint.each do |f, m|
         f.set_attribute(ATTR, 'orig', f.material ? f.material.name : '') if f.get_attribute(ATTR, 'orig').nil?
         f.material = m
@@ -340,10 +346,34 @@ module MVJoints
       model.abort_operation
       raise e
     end
-    UI.messagebox("Hid #{to_hide.size} joint lines, plus #{pieces} joint pieces of #{to_split.size} long lines, and gave " \
-                  "#{to_paint.size} faces the wall's paint (#{secs} s).\n" \
+    UI.messagebox("Hid #{to_hide.size} joint lines, plus #{pieces} joint pieces of #{to_split.size} long lines, sealed " \
+                  "#{sealed} hairline gaps, and gave #{to_paint.size} faces the wall's paint (#{secs} s).\n" \
                   "Edit > Undo takes it back; MVJoints.restore puts everything back later.\n" \
                   "View > Hidden Geometry shows the hidden lines again while it is on.")
+  end
+
+  # the strips go in one group of their own ("MV joint seals"), made afresh on each run; restore deletes it
+  def build_seals(model)
+    model.entities.grep(Sketchup::Group).each { |g| g.erase! if g.valid? && g.get_attribute(ATTR, 'seals') }
+    return 0 if @seals.nil? || @seals.empty?
+    g = model.entities.add_group
+    g.name = 'MV joint seals'
+    g.set_attribute(ATTR, 'seals', true)
+    n = 0
+    @seals.each do |pts, m|
+      f = begin
+        g.entities.add_face(pts.map { |p| Geom::Point3d.new(*p) })
+      rescue ArgumentError
+        nil
+      end
+      next unless f
+      f.material = m
+      f.back_material = m
+      n += 1
+    end
+    g.entities.grep(Sketchup::Edge).each { |e| e.hidden = true }
+    g.erase! if n.zero?
+    n
   end
 
   def span_of(ints) = ints.sum { |lo, hi| hi - lo }
@@ -393,6 +423,7 @@ module MVJoints
     ents.each do |e|
       next unless e.is_a?(Sketchup::Group) || e.is_a?(Sketchup::ComponentInstance)
       next if e.hidden? || (e.layer && !e.layer.visible?)
+      next if e.get_attribute(ATTR, 'seals')       # the script's own gap strips
       t = tr * e.transformation
       d = e.definition
       counts[d] += 1
@@ -489,6 +520,21 @@ module MVJoints
       end
       next unless ok && across
       found << [lo, hi]
+      # a hairline gap between this face and the one it runs on into: a strip in the wall's paint closes it
+      here.each do |s|
+        next unless s[3].equal?(er)
+        here.each do |o|
+          next if o[3].equal?(er) || dot(s[2], o[2]) > -SAME || o[3].object_id < er.object_id
+          off = dot(sub(o[3][:p0], er[:p0]), s[2])
+          next if off.abs < 0.02                            # touching (under half a millimetre)
+          w0 = [0.0, off].min - 0.04                        # 1 mm onto each side
+          w1 = [0.0, off].max + 0.04
+          side = o[3][:c][:wall] ? o : s
+          m = side[5].material || side[3][:c][:inst].material
+          pts = [[lo, w0], [hi, w0], [hi, w1], [lo, w1]].map { |l, w| add(add(er[:p0], er[:d], l), s[2], w) }
+          (@seals ||= []) << [pts, m]
+        end
+      end
       # this part's face carries on into a wall's face: it takes the wall's paint
       next if er[:c][:wall]
       here.each do |s|
