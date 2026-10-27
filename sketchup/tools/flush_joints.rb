@@ -14,8 +14,10 @@
 #     MVJoints.flicker_preview / MVJoints.flicker_apply / MVJoints.flicker_restore
 #                          # flickering faces: where a smaller part's face overlaps a bigger part's face in the same
 #                          # plane, it is hidden (fully covered, same paint) or moved 1 mm forward (one Undo step;
-#                          # restore puts them back). Run it after MVJoints.apply, so flush posts already wear the
-#                          # wall's paint and simply disappear into the wall.
+#                          # restore puts them back).
+# Best order: MVJoints.apply, then MVJoints.flicker_apply, then MVJoints.apply once more. The first pass gives
+# flush posts the wall's paint, so the flicker fix can simply hide their covered faces; the second pass hides the
+# small lines left where a face had to move 1 mm forward.
 # Loading also adds Extensions > Flush joints with the same commands.
 #
 # How a joint is found: along each edge line, every face that touches it (any group or component) is looked at.
@@ -237,28 +239,43 @@ module MVJoints
       end
     end
 
-    hide_votes = Hash.new(0)        # [definition, edge] -> number of copies where it is a joint
+    hide_votes = Hash.new(0)        # [definition, edge] -> number of copies where the whole edge is a joint
+    parts = {}                      # [definition, edge] -> joint stretches (one-copy parts only), from the edge's start
     paint = {}                      # [definition, face] -> [material, copies where it qualifies]
     edges.each do |er|
-      cut = sweep(er, buckets, paint)
-      cut += covered(er, conts) if cut < er[:len] * 0.95
-      hide_votes[[er[:c][:defn], er[:e]]] += 1 if cut >= er[:len] * 0.95
+      ints = sweep(er, buckets, paint)
+      ints += covered(er, conts) if span_of(ints) < er[:len] * 0.95
+      ints = merge(ints)
+      key = [er[:c][:defn], er[:e]]
+      if span_of(ints) >= er[:len] * 0.95
+        hide_votes[key] += 1
+      elsif counts[er[:c][:defn]] == 1 && !ints.empty?
+        # a long line that is a joint only in places (a beam's edge passing columns, walls and a window head):
+        # the line is cut where that changes and only the joint pieces are hidden
+        parts[key] = [er[:len], ints]
+      end
     end
 
     to_hide = hide_votes.select { |(d, _), v| v >= counts[d] }.keys.map(&:last)
+    to_split = parts.reject { |key, _| hide_votes[key] >= counts[key[0]] }.map { |(_, e), v| [e, *v] }
     to_paint = paint.select { |(d, _), (_, v)| v.size >= counts[d] }.map { |(_, f), (m, _)| [f, m] }
     secs = (Time.now - t0).round(1)
     if dry
-      UI.messagebox("Preview (nothing changed):\n#{to_hide.size} joint lines would be hidden\n#{to_paint.size} faces would take the wall's paint\n" \
+      UI.messagebox("Preview (nothing changed):\n#{to_hide.size} joint lines would be hidden\n" \
+                    "#{to_split.size} long lines would be hidden where they are a joint (cut there, rest stays)\n" \
+                    "#{to_paint.size} faces would take the wall's paint\n" \
                     "#{conts.size} groups and components looked at in #{secs} s.\n\nRun MVJoints.apply to do it.")
       return
     end
     model.start_operation('Flush joints', true)
+    pieces = 0
     begin
       to_hide.each do |e|
+        next unless e.valid?
         e.hidden = true
         e.set_attribute(ATTR, 'hidden', true)
       end
+      to_split.each { |e, len, ints| pieces += hide_pieces(e, len, ints) }
       to_paint.each do |f, m|
         f.set_attribute(ATTR, 'orig', f.material ? f.material.name : '') if f.get_attribute(ATTR, 'orig').nil?
         f.material = m
@@ -268,9 +285,52 @@ module MVJoints
       model.abort_operation
       raise e
     end
-    UI.messagebox("Hid #{to_hide.size} joint lines and gave #{to_paint.size} faces the wall's paint (#{secs} s).\n" \
+    UI.messagebox("Hid #{to_hide.size} joint lines, plus #{pieces} joint pieces of #{to_split.size} long lines, and gave " \
+                  "#{to_paint.size} faces the wall's paint (#{secs} s).\n" \
                   "Edit > Undo takes it back; MVJoints.restore puts everything back later.\n" \
                   "View > Hidden Geometry shows the hidden lines again while it is on.")
+  end
+
+  def span_of(ints) = ints.sum { |lo, hi| hi - lo }
+
+  # overlapping or touching stretches joined; pieces shorter than 1 cm dropped
+  def merge(ints)
+    out = []
+    ints.sort_by(&:first).each do |lo, hi|
+      if out.any? && lo <= out[-1][1] + 0.04 then out[-1][1] = [out[-1][1], hi].max
+      else out << [lo, hi]
+      end
+    end
+    out.select { |lo, hi| hi - lo >= 0.39 }
+  end
+
+  # cut edge e (length len in the world) at the ends of the joint stretches and hide the pieces inside them.
+  # A point added on a straight edge changes no face; restore shows the pieces again.
+  def hide_pieces(e, len, ints)
+    return 0 unless e.valid?
+    a = e.start.position
+    b = e.end.position
+    at = ->(l) { Geom::Point3d.linear_combination(1.0 - l / len, a, l / len, b) }
+    cuts = ints.flatten.select { |l| l > 0.2 && l < len - 0.2 }.uniq.sort
+    on = ->(p, pt) { (p.start.position.distance(pt) + pt.distance(p.end.position) - p.length).abs < 0.001 }
+    pieces = [e]
+    cuts.each do |l|
+      pt = at.call(l)
+      piece = pieces.find { |p| p.valid? && on.call(p, pt) && pt.distance(p.start.position) > 0.01 && pt.distance(p.end.position) > 0.01 }
+      next unless piece
+      added = piece.split(pt)
+      pieces << added if added.is_a?(Sketchup::Edge)
+    end
+    hidden = 0
+    pieces.each do |p|
+      next unless p.valid?
+      mid = (p.start.position.distance(a) + p.end.position.distance(a)) / 2.0 * len / a.distance(b)
+      next unless ints.any? { |lo, hi| mid > lo && mid < hi }
+      p.hidden = true
+      p.set_attribute(ATTR, 'hidden', true)
+      hidden += 1
+    end
+    hidden
   end
 
   # every visible group / component with its world transformation (nested ones too)
@@ -337,7 +397,7 @@ module MVJoints
 
   NEIGH = [-1, 0, 1].product([-1, 0, 1], [-1, 0, 1]).freeze
 
-  # joint stretches of edge er (returns the length covered), noting faces that take the wall's paint
+  # joint stretches of edge er ([from, to] along it, world inches), noting faces that take the wall's paint
   def sweep(er, buckets, paint)
     spans = er[:dirs].each_with_index.map { |(a, f), i| [0.0, er[:len], a, er, i, f] }
     NEIGH.each do |dx, dy, dz|
@@ -356,9 +416,9 @@ module MVJoints
         fr[:dirs].each_with_index { |(dir, f), i| spans << [lo, hi, dir, fr, i, f] }
       end
     end
-    return 0.0 if spans.size < 3
+    return [] if spans.size < 3
     cuts = spans.flat_map { |s| [s[0], s[1]] }.uniq.sort
-    total = 0.0
+    found = []
     cuts.each_cons(2) do |lo, hi|
       next if hi - lo < 0.004
       mid = (lo + hi) / 2
@@ -373,7 +433,7 @@ module MVJoints
         end
       end
       next unless ok && across
-      total += hi - lo
+      found << [lo, hi]
       # this part's face carries on into a wall's face: it takes the wall's paint
       next if er[:c][:wall]
       here.each do |s|
@@ -386,32 +446,33 @@ module MVJoints
         rec[1] << er[:c][:id] if rec[0] == m
       end
     end
-    total
+    found
   end
 
   # an edge lying inside another part's face, its side running into that part's solid: a column beside a beam end
+  # (stretches along the edge where that holds)
   def covered(er, conts)
     @faces ||= index_faces(conts)
-    return 0.0 if er[:dirs].size < 2
-    covered_len = 0.0
-    er[:dirs].each_with_index do |(f, _), i|
+    return [] if er[:dirs].size < 2
+    found = []
+    er[:dirs].first(2).each_with_index do |(f, _), i|
       s = er[:dirs][1 - i][0]
       n = norm([f[1] * er[:d][2] - f[2] * er[:d][1], f[2] * er[:d][0] - f[0] * er[:d][2], f[0] * er[:d][1] - f[1] * er[:d][0]])
       next unless n
-      steps = [[(er[:len] / 2.0).ceil, 2].max, 12].min
-      hit = 0
-      steps.times do |k|
-        at = add(er[:p0], er[:d], er[:len] * (k + 0.5) / steps)
-        pt = add(at, f, -0.04)
+      steps = [[(er[:len] / 4.0).ceil, 2].max, 40].min    # about every 10 cm, at most 40
+      step = er[:len] / steps
+      ok = lambda do |k|
+        pt = add(add(er[:p0], er[:d], step * (k + 0.5)), f, -0.04)
         other = covering(pt, n, er[:c])
-        break unless other
+        next false unless other
         side = dot(sub(other[:centre].to_a, pt), n)
-        break unless (side.positive? && dot(s, n).positive?) || (side.negative? && dot(s, n).negative?)
-        hit += 1
+        (side.positive? && dot(s, n).positive?) || (side.negative? && dot(s, n).negative?)
       end
-      covered_len = er[:len] if hit == steps
+      # a quick look at both ends and the middle first: most edges have nothing there
+      next unless [0, steps / 2, steps - 1].uniq.any? { |k| ok.call(k) }
+      steps.times { |k| found << [step * k, step * (k + 1)] if ok.call(k) }
     end
-    covered_len
+    found
   end
 
   CELL = 39.37                      # 1 m grid, so a lookup only meets the faces near the point
