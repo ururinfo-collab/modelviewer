@@ -190,6 +190,54 @@ module MVJoints
     nil
   end
 
+  # Why is this line still there? Double-click into the group, select one line, run MVJoints.why.
+  def why
+    model = Sketchup.active_model
+    e = model.selection.grep(Sketchup::Edge).first
+    return UI.messagebox('Double-click into the group, click one line that should have gone, then run MVJoints.why') unless e
+    @faces = nil
+    conts = []
+    counts = Hash.new(0)
+    collect(model.entities, Geom::Transformation.new, conts, counts)
+    buckets = {}
+    mine = nil
+    conts.each do |c|
+      c[:defn].entities.grep(Sketchup::Edge).each do |x|
+        next if x.soft? || x.smooth? || (x.hidden? && !x.get_attribute(ATTR, 'hidden'))
+        r = edge_record(c, x)
+        next unless r
+        (buckets[r[:key]] ||= []) << r
+        mine ||= r if x == e
+      end
+    end
+    return UI.messagebox("That line's group was not found among the visible groups (hidden tag?).") unless mine
+    c = mine[:c]
+    lines = ["Part: #{c[:inst].name} (#{c[:defn].name}), copies: #{counts[c[:defn]]}, wall: #{c[:wall]}",
+             "Line: #{(mine[:len] * 25.4).round} mm, faces on it: #{e.faces.size}, directions found: #{mine[:dirs].size}"]
+    near = []
+    NEIGH.each do |dx, dy, dz|
+      k = mine[:key].dup
+      k[3] += dx; k[4] += dy; k[5] += dz
+      (buckets[k] || []).each do |fr|
+        next if fr.equal?(mine) || dot(fr[:d], mine[:d]).abs < 1 - 1e-6
+        q = sub(fr[:p0], mine[:p0])
+        off = add(q, mine[:d], -dot(q, mine[:d]))
+        dist = Math.sqrt(dot(off, off))
+        near << "  #{fr[:c][:inst].name}: #{(dist * 25.4).round(1)} mm off the line, #{fr[:dirs].size} faces, " \
+                "directions #{fr[:dirs].map { |dd, _| dd.map { |v| v.round(2) } }.inspect}" if dist < TOL * 3
+      end
+    end
+    lines << "Own directions: #{mine[:dirs].map { |dd, _| dd.map { |v| v.round(2) } }.inspect}"
+    lines << "Lines on the same line nearby (#{near.size}):" << near.first(8)
+    s = merge(sweep(mine, buckets, {}))
+    cv = merge(covered(mine, conts))
+    lines << "Joint stretches from matching: #{s.map { |a, b| [(a * 25.4).round, (b * 25.4).round] }.inspect} mm"
+    lines << "Stretches inside another part's face: #{cv.map { |a, b| [(a * 25.4).round, (b * 25.4).round] }.inspect} mm"
+    text = lines.flatten.join("\n")
+    puts text
+    UI.messagebox(text)
+  end
+
   def preview
     run(dry: true)
   end
@@ -460,10 +508,11 @@ module MVJoints
   # (stretches along the edge where that holds)
   def covered(er, conts)
     @faces ||= index_faces(conts)
-    return [] if er[:dirs].size < 2
     found = []
+    # a line with a face on one side only (a panel whose end is open where it meets a column): it is a joint
+    # wherever the surface simply carries on past it in the same plane
     er[:dirs].first(2).each_with_index do |(f, _), i|
-      s = er[:dirs][1 - i][0]
+      s = er[:dirs].size >= 2 ? er[:dirs][1 - i][0] : nil
       n = norm([f[1] * er[:d][2] - f[2] * er[:d][1], f[2] * er[:d][0] - f[0] * er[:d][2], f[0] * er[:d][1] - f[1] * er[:d][0]])
       next unless n
       steps = [[(er[:len] / 4.0).ceil, 2].max, 40].min    # about every 10 cm, at most 40
@@ -472,6 +521,7 @@ module MVJoints
         pt = add(add(er[:p0], er[:d], step * (k + 0.5)), f, -0.04)
         other = covering(pt, n, er[:c])
         next false unless other
+        next true unless s
         side = dot(sub(other[:centre].to_a, pt), n)
         (side.positive? && dot(s, n).positive?) || (side.negative? && dot(s, n).negative?)
       end
