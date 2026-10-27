@@ -391,7 +391,8 @@ export class Viewer extends EventTarget {
   // visible part (or the ground), about 50 times finer in overall views; inside the house it stays small.
   fitNear() {
     const cam = this.camera;
-    if (!this.ready || this.renderer.xr.isPresenting) return;   // not while a model is still being prepared
+    // not while a model is still being prepared, nor in AR (the AR session clips at this camera's near plane)
+    if (!this.ready || this.lockNear || this.renderer.xr.isPresenting) return;
     if (this._boxesDirty || !this._boxes) {
       this._boxes = this.meshes.filter(m => m.visible && m.userData.owner?.shown).map(m => new THREE.Box3().setFromObject(m));
       this._boxesDirty = false;
