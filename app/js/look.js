@@ -48,7 +48,7 @@ export class Look {
     try { saved = JSON.parse(localStorage.getItem(KEY)) || {}; } catch { /* private mode */ }
     // own choices on top of the style: null = the style's default
     this.state = { style: 'technical', bg: null, ground: null, ao: null, edges: null, exposure: 1, colours: 'vivid',
-      contact: null, twoPoint: null, ...saved };
+      contact: null, twoPoint: null, joints: false, ...saved };
     if (!STYLES[this.state.style]) this.state.style = 'technical';
     if (!COLOURS[this.state.colours]) this.state.colours = 'vivid';
   }
@@ -89,6 +89,7 @@ export class Look {
     v.setProfile(!!s.profile);
     v.setPresentation({ contact: this.contact, fog: !!s.fog, vignette: !!s.vignette });
     v.setTwoPoint(this.twoPoint);
+    v.setJoints(!!this.state.joints);
     document.body.classList.toggle('dark', this.bg === 'dark');
   }
 
@@ -113,6 +114,7 @@ export class Look {
     if (key === 'exposure') v.setToneMapping(this.style.tone, value);
     if (key === 'contact') v.contact.setEnabled(value);
     if (key === 'twoPoint') v.setTwoPoint(value);
+    if (key === 'joints') v.setJoints(value);
     if (key === 'colours') {
       v.saturation = this.colours.sat;
       v.setStyle(this.state.style);        // rebuilds the materials with the new saturation

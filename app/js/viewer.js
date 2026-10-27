@@ -10,6 +10,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { ContactShadow, skyEnvironment, ProfileShader, Vignette } from './present.js';
+import { findJoints, flushPaint } from './joints.js';
 import { categorize } from './categories.js';
 import { autoStage } from './sequence.js';
 
@@ -116,6 +117,7 @@ export class Viewer extends EventTarget {
     this.profile = false;
     this.twoPoint = false;
     this.walking = false;
+    this.showJoints = false;
 
     new ResizeObserver(() => this.resize()).observe(canvas);
     this.resize();
@@ -389,7 +391,7 @@ export class Viewer extends EventTarget {
   // visible part (or the ground), about 50 times finer in overall views; inside the house it stays small.
   fitNear() {
     const cam = this.camera;
-    if (!this.root || this.renderer.xr.isPresenting) return;
+    if (!this.ready || this.renderer.xr.isPresenting) return;   // not while a model is still being prepared
     if (this._boxesDirty || !this._boxes) {
       this._boxes = this.meshes.filter(m => m.visible && m.userData.owner?.shown).map(m => new THREE.Box3().setFromObject(m));
       this._boxesDirty = false;
@@ -443,6 +445,7 @@ export class Viewer extends EventTarget {
 
   async setModel(loaded, onProgress = () => {}) {
     this.clearModel();
+    this.ready = false;
     const { root, isEntity, meta } = loaded;
     this.meta = meta || {};
     this.modelName = loaded.name;
@@ -478,7 +481,49 @@ export class Viewer extends EventTarget {
     this.updateVisibility();
     this.fitAll(false);
     this.contact.bake();
+    this.ready = true;
     this.dispatchEvent(new Event('model'));
+    this.findJointsLater(root);
+  }
+
+  // Edge lines without the joints between flush parts (wall panels, columns, beams in one plastered face). Runs
+  // after the model shows, in small slices (a few seconds on a phone): the lines clear a moment after opening.
+  async findJointsLater(root) {
+    let res;
+    try { res = await findJoints(this.meshes); } catch (e) { console.warn('joint lines', e); return; }
+    if (this.root !== root) return;          // another model was opened meanwhile
+    const { clean, partners, seals, skins } = res;
+    for (const [m, src] of flushPaint(partners)) m.userData.paintSrc = src;
+    // slab edges flush with a wall: a skin in the wall's paint on just that face (the floor keeps its colour)
+    for (const [m, list] of skins) {
+      m.userData.skins = list.map(({ partner, tris }) => {
+        const g = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(tris, 3));
+        g.computeVertexNormals();
+        const skin = new THREE.Mesh(g, [].concat(m.material)[0]);
+        skin.raycast = () => {};
+        skin.userData.partner = partner;
+        m.add(skin);
+        return skin;
+      });
+    }
+    for (const [m, tris] of seals) {
+      const g = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(tris, 3));
+      g.computeVertexNormals();
+      const seal = new THREE.Mesh(g, [].concat(m.material)[0]);
+      seal.raycast = () => {};
+      seal.userData.seal = true;
+      m.add(seal);
+      m.userData.seal = seal;
+    }
+    for (const [m, segs] of clean) {
+      const line = m.userData.line;
+      line.userData.full = line.geometry;
+      line.userData.clean = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(segs, 3));
+    }
+    this.jointCount = clean.size;
+    this.setJoints(this.showJoints);
+    this.contact.bake();
+    this.dispatchEvent(new Event('joints'));
   }
 
   clearModel() {
@@ -486,7 +531,10 @@ export class Viewer extends EventTarget {
     this.select(null);
     this.scene.remove(this.root);
     const geos = new Set();
-    this.root.traverse(o => { if (o.geometry) geos.add(o.geometry); });
+    this.root.traverse(o => {
+      if (o.geometry) geos.add(o.geometry);
+      for (const g of [o.userData.full, o.userData.clean]) if (g) geos.add(g);   // both edge-line versions
+    });
     geos.forEach(g => g.dispose());
     for (const v of this.mats.values()) for (const m of Object.values(v)) { m.map?.dispose(); m.dispose(); }
     this.mats.clear();
@@ -689,7 +737,7 @@ export class Viewer extends EventTarget {
     const opacity = src.opacity ?? 1, glass = !!src.transparent || opacity < 0.999;
     const color = src.color ? src.color.clone() : new THREE.Color(0xdddddd);
     // Look › Colours: stronger or softer model colours (in the screen's sRGB terms, as a designer sees them)
-    if (this.saturation && this.saturation !== 1) {
+    if (this.saturation && this.saturation !== 1 && !src.userData.userColour) {   // a colour you picked shows as picked
       const hsl = color.getHSL({}, THREE.SRGBColorSpace);
       color.setHSL(hsl.h, Math.min(1, hsl.s * this.saturation), hsl.l, THREE.SRGBColorSpace);
     }
@@ -724,7 +772,8 @@ export class Viewer extends EventTarget {
   applyMaterial(mesh) {
     const E = mesh.userData.owner;
     let key = this.selSet.has(E) ? 'sel' : E.fresh ? 'fresh' : this.isGhost(E) ? 'ghost' : 'base';
-    const src = mesh.userData.src;
+    // an object's own colour (Colour), else, joint lines hidden, the wall's paint on flush columns and beams
+    const src = mesh.userData.colourSrc || (!this.showJoints && mesh.userData.paintSrc) || mesh.userData.src;
     // revision compare: added green, changed orange, unchanged faded
     const diff = this.diffMats && E.diff && key !== 'sel' ? E.diff : null;
     if (diff === 'same') key = 'ghost';
@@ -735,6 +784,7 @@ export class Viewer extends EventTarget {
       if (mesh.userData.line) mesh.userData.line.material = this.edgeMat;
       mesh.castShadow = this.shadows;
       mesh.receiveShadow = this.shadows;
+      this.sealLike(mesh, key);
       return;
     }
     let pri = mesh.userData.sizeClass;
@@ -747,6 +797,39 @@ export class Viewer extends EventTarget {
     if (mesh.userData.line) mesh.userData.line.material = key === 'ghost' ? this.edgeGhostMat : this.edgeMat;
     mesh.castShadow = this.shadows && key !== 'ghost';
     mesh.receiveShadow = this.shadows;
+    this.sealLike(mesh, key);
+  }
+
+  // a seam strip wears its part's current material (paint, see-through, selection); a skin wears its wall's
+  sealLike(mesh, key = 'base') {
+    const s = mesh.userData.seal;
+    if (s) {
+      s.material = [].concat(mesh.material)[0];
+      s.receiveShadow = mesh.receiveShadow;
+    }
+    for (const k of mesh.userData.skins || []) {
+      const w = k.userData.partner;
+      const src = w.userData.paintSrc || [].concat(w.userData.src)[0];
+      k.material = this.variants(src, 0)[key];
+      k.receiveShadow = mesh.receiveShadow;
+    }
+  }
+
+  // a paint changed colour: drop its cached looks so they are made again from it
+  forgetMaterial(srcs) {
+    for (const src of [].concat(srcs)) {
+      for (const key of [src, ...Object.values(src.userData._pri || {})]) {
+        const v = this.mats.get(key);
+        if (!v) continue;
+        for (const m of Object.values(v)) m.dispose();
+        this.mats.delete(key);
+      }
+    }
+  }
+
+  rebuildMaterial(src, refresh = true) {
+    this.forgetMaterial(src);
+    if (refresh) this.refreshMaterials();
   }
 
   refreshMaterials() {
@@ -763,6 +846,18 @@ export class Viewer extends EventTarget {
   }
 
   setXray(on) { this.setViewMode(on ? 'xray' : 'solid'); }
+
+  // false: no lines where parts meet flush (one plastered, painted surface); true: every part's own outline
+  setJoints(on) {
+    this.showJoints = on;
+    for (const m of this.meshes) {
+      const l = m.userData.line;
+      if (l?.userData.clean) l.geometry = on ? l.userData.full : l.userData.clean;
+      if (m.userData.seal) m.userData.seal.visible = !on;
+      for (const s of m.userData.skins || []) s.visible = !on;
+    }
+    this.refreshMaterials();     // flush columns and beams take the wall's paint (or their own back)
+  }
 
   setEdges(on) {
     this.edges = on;
@@ -807,7 +902,8 @@ export class Viewer extends EventTarget {
       hidden = hidden || E.hidden || this.tags.get(E.tag)?.visible === false;
       inIso = inIso || !iso || iso.has(E);
       const show = !hidden && inIso && this.categories.get(E.cat)?.visible !== false && !(E.unbuilt && !this.seqGhost)
-        && !(this.diffMats && !this.diffShowSame && E.diff === 'same');
+        && !(this.diffMats && !this.diffShowSame && E.diff === 'same')
+        && (!this.levelShow || E.level == null || this.levelShow.has(E.level));   // Floors: view by level
       E.obj.visible = !hidden;
       for (const m of E.meshes) m.visible = show;   // after: the object may be the mesh itself
       E.shown = show;
@@ -840,6 +936,7 @@ export class Viewer extends EventTarget {
     for (const t of this.tags.values()) t.visible = true;
     for (const c of this.categories.values()) c.visible = true;
     this.isolated = null;
+    this.levelShow = null;
     this.refreshMaterials();
     this.updateVisibility();
   }

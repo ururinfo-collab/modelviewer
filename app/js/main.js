@@ -12,6 +12,9 @@ import { Notes, shrinkPhoto } from './notes.js';
 import { AR, arSupported, SCALES } from './ar.js';
 import { AIRender } from './ai.js';
 import { Share } from './share.js';
+import { Colours, SWATCHES, hexOf } from './colours.js';
+import { Explode } from './explode.js';
+import { detectLevels } from './levels.js';
 import { screenshot, Recorder, showSave } from './capture.js';
 import { saveRecent, listRecent, getRecent, deleteRecent, getSetting, setSetting } from './store.js';
 import { Panels, esc } from './panels.js';
@@ -133,6 +136,7 @@ async function openFiles(files, keep = true) {
     app.section.set('off');
     app.measure.clear();
     app.notes.load();
+    app.colours.load(app.client?.colours);
     app.panels.sunInit();
     buildScenes();
     if (keep) saveRecent([main, ...files.filter(f => f !== main)]);
@@ -473,7 +477,7 @@ $('#tools').onclick = async e => {
   if (!b) return;
   const t = b.dataset.tool;
   if (!viewer.root && t !== 'settings') return toast('Open a model first');
-  if (['layers', 'tree', 'section', 'sun', 'settings', 'look', 'qty', 'compare', 'notes', 'ai', 'share'].includes(t)) {
+  if (['layers', 'tree', 'section', 'sun', 'settings', 'look', 'qty', 'compare', 'notes', 'ai', 'share', 'floors'].includes(t)) {
     if (app.tool === 'walk' || app.tool === 'measure' || app.tool === 'build') exitTools();
     return togglePanel(t);
   }
@@ -500,6 +504,7 @@ $('#tools').onclick = async e => {
   if (t === 'build') {
     if (app.tool === 'build') return exitTools();
     exitTools();
+    if (app.explode.active) app.explode.set(0);   // the build animates parts from where they rest
     viewer.select(null);
     app.panels.close();
     app.seq.data = chosenOrder();
@@ -692,7 +697,6 @@ function chosenOrder() {
 }
 
 app.chosenOrder = chosenOrder;
-
 function useOrder(name) {
   const s = app.seq;
   setSetting(viewer.modelName, 'order', name);
@@ -962,7 +966,7 @@ function updateBars() {
   $('#movebar').hidden = t !== 'move';
   $('#measurebar').hidden = t !== 'measure';
   $('#buildbar').hidden = t !== 'build';
-  if (t) { $('#viewMenu').hidden = true; $('#arMenu').hidden = true; }
+  if (t) { $('#viewMenu').hidden = true; $('#arMenu').hidden = true; $('#paintMenu').hidden = true; }
   if (t !== 'build') $('#orderMenu').hidden = true;
   if (E) $('#selName').textContent = E.name;
   if (E) {
@@ -1016,10 +1020,66 @@ function selAction(a) {
     viewer.setGhost(E, !E.ghost);
     updateBars();
   }
-  if (a === 'move' && !app.client) { app.panels.close(); setTool('move'); app.move.start(E); updateBars(); toast('Drag the arrows. Rotate and Up/down below.'); }
+  if (a === 'paint') return openPaint(E);
+  if (a === 'move' && !app.client) { if (app.explode.active) app.explode.set(0); app.panels.close(); setTool('move'); app.move.start(E); updateBars(); toast('Drag the arrows. Rotate and Up/down below.'); }
   if (a === 'up' && E.parent && E.parent !== viewer.rootEnt && E.parent !== viewer.top) viewer.select(E.parent);
   if (a === 'close') viewer.select(null);
 }
+
+// ---- colour: repaint the selected object, or everything in its paint ------------------------
+
+app.colours = new Colours(app);
+app.explode = new Explode(app);
+// levels (Underground, Ground floor, ..., Roof) of each newly opened model
+viewer.addEventListener('model', () => {
+  app.levels = detectLevels(viewer);
+  for (const [E, lv] of app.levels.of) E.level = lv;
+  viewer.levelShow = null;
+  app.panels.levelSel = null;
+});
+let paintScope = 'mat';
+function openPaint(E) {
+  const C = app.colours, src = C.paintOf(E);
+  if (!src) return toast('Nothing to colour in this object');
+  const own = C.meshesOf(E).some(m => m.userData.colourSrc);
+  const scope = own ? 'obj' : paintScope;
+  const users = C.usersOf(C.shownSrc(C.meshesOf(E)[0]));
+  const cur = hexOf(src);
+  const menu = $('#paintMenu');
+  menu.innerHTML = `<div class="omtitle">Colour · ${esc(E.name)}</div>` +
+    `<div class="seg" style="margin:4px 6px"><button data-scope="obj" class="${scope === 'obj' ? 'on' : ''}">This object</button>` +
+    `<button data-scope="mat" class="${scope === 'mat' ? 'on' : ''}">All in this paint (${users})</button></div>` +
+    '<div class="swatches">' + SWATCHES.map(([hex, name]) =>
+      `<button data-hex="${hex}" title="${name}" style="background:${hex}" class="${hex === cur ? 'on' : ''}"></button>`).join('') + '</div>' +
+    `<label class="pickrow">Any colour<input type="color" id="paintPick" value="${cur}"></label>` +
+    '<div class="btnrow" style="margin:4px 6px"><button class="btn" data-pa="reset">Original colour</button><button class="btn primary" data-pa="done">Done</button></div>';
+  menu.dataset.scope = scope;
+  menu.hidden = false;
+  const apply = hex => {
+    const s = menu.dataset.scope;
+    if (s === 'obj') C.setObject(E, hex);
+    else C.setMaterial(C.shownSrc(C.meshesOf(E)[0]), hex);
+    menu.querySelectorAll('[data-hex]').forEach(b => b.classList.toggle('on', b.dataset.hex === hex));
+    $('#paintPick').value = hex;
+  };
+  menu.onclick = e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.scope) {
+      menu.dataset.scope = paintScope = b.dataset.scope;
+      menu.querySelectorAll('[data-scope]').forEach(x => x.classList.toggle('on', x === b));
+    }
+    if (b.dataset.hex) apply(b.dataset.hex);
+    if (b.dataset.pa === 'reset') {
+      if (menu.dataset.scope === 'obj' || own) C.resetObject(E);
+      if (menu.dataset.scope === 'mat') C.resetMaterial(C.shownSrc(C.meshesOf(E)[0]));
+      return openPaint(E);
+    }
+    if (b.dataset.pa === 'done') menu.hidden = true;
+  };
+  $('#paintPick').oninput = e => apply(e.target.value);
+}
+viewer.addEventListener('select', () => { $('#paintMenu').hidden = true; });
 
 // the object a tap at this hit would select (whole object first, then one level deeper)
 function tapTarget(h) {
@@ -1088,7 +1148,7 @@ viewer.canvas.addEventListener('contextmenu', e => {
   if (E) {
     m += `<div class="omtitle">${esc(E.name)}</div>` + item('info', 'Info') + item('zoom', 'Zoom to it') + item('hide', 'Hide') +
       item('isolate', viewer.isolated?.has(E) ? 'Exit isolate' : 'Isolate (hide everything else)') +
-      item('ghost', E.ghost ? 'Make solid' : 'See-through') + item('move', 'Move / rotate');
+      item('ghost', E.ghost ? 'Make solid' : 'See-through') + item('paint', 'Colour') + item('move', 'Move / rotate');
     if (E.parent && E.parent !== viewer.rootEnt && E.parent !== viewer.top) m += item('up', 'Select the group it is in', E.parent.name);
     m += '<hr>';
   }

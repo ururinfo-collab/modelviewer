@@ -8,9 +8,9 @@ import { STYLES, BACKGROUNDS, GROUNDS, COLOURS } from './look.js';
 import { quantities, toCSV } from './quantities.js';
 import { PRESETS, GEMINI_MODELS } from './ai.js';
 
-export const APP_VERSION = '1.22.0';
+export const APP_VERSION = '1.23.0';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look', qty: 'Quantities', compare: 'Compare revisions', notes: 'Notes', ai: 'AI render', share: 'Client link' };
+const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look', qty: 'Quantities', compare: 'Compare revisions', notes: 'Notes', ai: 'AI render', share: 'Client link', floors: 'Floors' };
 
 export class Panels {
   constructor(app) {
@@ -535,14 +535,19 @@ export class Panels {
     h += `<label class="toggle">Soft shadows in corners (ambient occlusion)<input type="checkbox" data-k="ao" ${L.ao ? 'checked' : ''}></label>`;
     h += `<label class="toggle">Sun shadows<input type="checkbox" data-k="shadows" ${this.v.shadows ? 'checked' : ''}></label>`;
     h += `<label class="toggle">Edge lines<input type="checkbox" data-k="edges" ${L.edges ? 'checked' : ''}></label>`;
+    h += `<label class="toggle">Joints between flush parts (lines and colours)<input type="checkbox" data-k="joints" ${L.state.joints ? 'checked' : ''}></label>`;
     h += `<label class="toggle">Soft ground shadow<input type="checkbox" data-k="contact" ${L.contact ? 'checked' : ''}></label>`;
     h += `<label class="toggle">Straight verticals (no leaning walls)<input type="checkbox" data-k="twoPoint" ${L.twoPoint ? 'checked' : ''}></label>`;
     if (st.tone) h += `<div class="field"><label>Brightness</label><input type="range" data-k="exposure" min="0.5" max="1.8" step="0.05" value="${s.exposure}"><output>${s.exposure.toFixed(2)}</output></div>`;
+    const nc = this.app.colours?.count || 0;
+    h += `<p class="note">Colours: select an object, then Colour (this object, or everything in its paint).${nc ? '' : ' Nothing recoloured yet.'}</p>`;
+    if (nc) h += `<div class="btnrow"><button class="btn" data-colreset="1">Original colours for everything (${nc} change${nc > 1 ? 's' : ''})</button></div>`;
     h += '<p class="note">Soft corners are off on phones unless you switch them on (they cost battery); in Presentation they come on and are drawn when the view rests. In See inside and X-ray they pause.</p>';
     this.body.innerHTML = h;
     this.body.onclick = e => {
       const b = e.target.closest('button');
       if (!b) return;
+      if (b.dataset.colreset) { if (confirm('Put every object back to its original colour?')) this.app.colours.resetAll(); return this.render('look', true); }
       if (b.dataset.style) { L.setStyle(b.dataset.style); return this.render('look', true); }
       if (b.dataset.set) { L.set(b.dataset.set, b.dataset.val); return this.render('look', true); }
     };
@@ -550,7 +555,7 @@ export class Panels {
       const k = e.target.dataset.k;
       if (k === 'ao') L.set('ao', e.target.checked);
       if (k === 'edges') L.set('edges', e.target.checked);
-      if (k === 'contact' || k === 'twoPoint') L.set(k, e.target.checked);
+      if (k === 'contact' || k === 'twoPoint' || k === 'joints') L.set(k, e.target.checked);
       if (k === 'exposure') { L.set('exposure', +e.target.value); e.target.nextElementSibling.textContent = (+e.target.value).toFixed(2); }
       if (k === 'shadows') {
         const S = this.sunState;
@@ -640,6 +645,79 @@ export class Panels {
       if (e.target.id === 'aiExtra') A.set('extra', e.target.value);
       if (e.target.id === 'aiPC') A.set('pc', e.target.value.trim());
       if (e.target.dataset.k === 'detail') A.set('detail', e.target.checked);
+    };
+  }
+
+  // ---- floors: view by level, explode by level ---------------------------------------------
+
+  floors() {
+    const X = this.app.explode, L = this.app.levels, v = this.v;
+    const pct = Math.round(X.amount * 100);
+    const sel = this.levelSel ?? null, below = !!this.levelBelow;
+    const lv = (k, label) => `<button class="chip ${sel === k ? 'on' : ''}" data-lv="${k ?? 'all'}">${label}</button>`;
+    let h = '<p class="note">View</p><div class="chips">' + lv(null, 'All levels') +
+      (L ? L.names.map((n, k) => (L.count[k] ? lv(k, n) : '')).join('') : '') + '</div>';
+    h += `<label class="toggle">With the levels below<input type="checkbox" data-k="below" ${below ? 'checked' : ''}></label>`;
+    // one level on screen: it comes apart in layers; more: the levels lift apart
+    const layers = sel != null && !below;
+    const mode = layers ? 'layers' : 'levels';
+    if (X.mode !== mode && X.amount > 0) X.set(X.amount, mode);
+    X.mode = mode;
+    h += `<p class="note" style="margin-top:12px">${layers ? `Explode: take the ${esc(L.names[sel].toLowerCase())} apart in layers` : 'Explode: lift the levels apart'}</p>`;
+    h += `<div class="field"><label>How far</label><input type="range" id="xAmt" min="0" max="100" step="1" value="${pct}"><output id="xOut">${pct} %</output></div>`;
+    h += '<div class="btnrow"><button class="btn" data-xa="play">Play</button><button class="btn" data-xa="back">Put back</button><button class="btn" data-xa="fit">Fit view</button></div>';
+    if (layers) {
+      h += `<p class="note">Layers, bottom to top: <b>${X.layersShown().map(esc).join(' · ')}</b>. Each layer moves as one piece; Put back restores everything exactly.</p>`;
+    } else if (L) {
+      const fmtE = e => (e == null ? 'below ground' : `${e >= 0 ? '+' : ''}${e.toFixed(2)} m`);
+      h += '<p class="note">' + L.names.map((n, k) => (L.count[k] ? `<b>${esc(n)}</b> ${fmtE(L.elev[k])} · ${L.count[k]} objects` : '')).filter(Boolean).join('<br>') + '</p>';
+      h += '<p class="note">Each level moves as one piece with even gaps: the ground floor stays, the floors above and the roof lift, the underground drops. Pick one level above to take it apart in layers instead. Put back restores everything exactly.</p>';
+    }
+    h += '<p class="note">Levels come from the floor slabs; each object belongs to the floor it stands on (slabs and beams to the floor they carry).</p>';
+    this.body.innerHTML = h;
+    const showLevel = (k, withBelow) => {
+      this.levelSel = k;
+      v.levelShow = k == null ? null : new Set(withBelow ? Array.from({ length: k + 1 }, (_, i) => i) : [k]);
+      v.updateVisibility();
+      // an explode in progress switches to what is on screen now (layers of one level, or levels)
+      if (X.amount > 0) X.set(X.amount, k != null && !withBelow ? 'layers' : 'levels');
+      v.fitAll();
+    };
+    this.body.onchange = e => {
+      if (e.target.dataset.k === 'below') {
+        this.levelBelow = e.target.checked;
+        if (this.levelSel != null) showLevel(this.levelSel, this.levelBelow);
+        this.render('floors', true);
+      }
+    };
+    const out = () => { const p = Math.round(X.amount * 100); const r = this.body.querySelector('#xAmt'); if (r) { r.value = p; this.body.querySelector('#xOut').textContent = `${p} %`; } };
+    const tween = (to, ms = 1400) => {
+      const from = X.amount, t0 = performance.now();
+      cancelAnimationFrame(this._xa);
+      const step = () => {
+        const t = Math.min(1, (performance.now() - t0) / ms), e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        X.set(from + (to - from) * e);
+        out();
+        if (t < 1) this._xa = requestAnimationFrame(step);
+      };
+      step();
+    };
+    this.body.oninput = e => {
+      if (e.target.id !== 'xAmt') return;
+      cancelAnimationFrame(this._xa);
+      X.set(+e.target.value / 100);
+      this.body.querySelector('#xOut').textContent = `${e.target.value} %`;
+    };
+    this.body.onclick = e => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.lv) {
+        showLevel(b.dataset.lv === 'all' ? null : +b.dataset.lv, this.levelBelow);
+        return this.render('floors', true);
+      }
+      if (b.dataset.xa === 'play') tween(X.amount > 0.5 ? 0 : 1);
+      if (b.dataset.xa === 'back') tween(0, 700);
+      if (b.dataset.xa === 'fit') this.v.fitAll();
     };
   }
 
@@ -737,7 +815,7 @@ export class Panels {
       const gone = s.revoked ? 'withdrawn' : new Date(s.expires_at) < new Date() ? 'expired' : !s.ready ? 'unfinished' : '';
       return `<div class="row ${gone ? 'off' : ''}"><span class="nm">${esc(s.title)}<small>${gone || `until ${day(s.expires_at)}`} · opened ${s.views}× · ${(s.bytes / 1048576).toFixed(1)} MB</small></span>` +
         (!gone && S.links[s.id] ? `<button class="ib" data-copy="${esc(s.id)}" data-icon="share" title="Copy the link"></button>` : '') +
-        (!gone ? `<button class="ib" data-revoke="${esc(s.id)}" data-icon="trash" title="Withdraw the link"></button>` : '') + '</div>';
+        (!gone || gone === 'unfinished' ? `<button class="ib" data-revoke="${esc(s.id)}" data-icon="trash" title="${gone ? 'Remove' : 'Withdraw the link'}"></button>` : '') + '</div>';
     }).join('');
   }
 

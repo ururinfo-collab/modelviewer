@@ -50,7 +50,18 @@ async function owner(code: unknown) {
 
 const safeName = (s: string) => s.replace(/[^\w.\- ]+/g, "_").slice(0, 120);
 
-// expired or withdrawn links: files go, the row stays (the owner still sees it in the list)
+// a link that never finished uploading: its files (any that arrived) and its row go
+async function discard(id: string) {
+  const { data: s } = await db.from("mv_shares").select("files, ready").eq("id", id).maybeSingle();
+  if (!s || s.ready) return false;
+  const paths = (s.files as { name: string }[]).map((f) => `${id}/${f.name}`);
+  if (paths.length) await db.storage.from(BUCKET).remove(paths);
+  await db.from("mv_shares").delete().eq("id", id);
+  return true;
+}
+
+// expired or withdrawn links: files go, the row stays (the owner still sees it in the list);
+// uploads that never finished within an hour go entirely
 async function sweep() {
   const { data } = await db.from("mv_shares").select("id, files")
     .or(`expires_at.lt.${new Date().toISOString()},revoked.eq.true`).neq("files", "[]");
@@ -59,6 +70,12 @@ async function sweep() {
     if (paths.length) await db.storage.from(BUCKET).remove(paths);
     await db.from("mv_shares").update({ files: [] }).eq("id", s.id);
   }
+  const { data: stale } = await db.from("mv_shares").select("id").eq("ready", false)
+    .lt("created_at", new Date(Date.now() - 3600_000).toISOString());
+  for (const s of stale ?? []) await discard(s.id);
+  // leftovers of an upload test
+  const { data: test } = await db.storage.from(BUCKET).list("test", { limit: 100 });
+  if (test?.length) await db.storage.from(BUCKET).remove(test.map((o) => `test/${o.name}`));
 }
 
 async function handle(b: Record<string, unknown>) {
@@ -123,8 +140,13 @@ async function handle(b: Record<string, unknown>) {
         .order("created_at", { ascending: false }).limit(100);
       return { shares: data ?? [] };
     }
+    case "discard": {
+      await owner(b.code);
+      return { ok: await discard(String(b.id)) };
+    }
     case "revoke": {
       await owner(b.code);
+      if (await discard(String(b.id))) return { ok: true };   // never finished: removed outright
       await db.from("mv_shares").update({ revoked: true }).eq("id", String(b.id));
       await sweep();
       return { ok: true };

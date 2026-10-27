@@ -188,6 +188,14 @@ body.walking #tools, body.walking #scenesWrap, body.walking #dock { display: non
 .aicmp b.l { left: 8px; } .aicmp b.r { right: 8px; }
 #aiDlg .sacts { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
 
+/* ---- colour ---- */
+#paintMenu { max-width: 420px; }
+.swatches { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; padding: 6px; }
+.swatches button { aspect-ratio: 1; padding: 0 !important; border-radius: 50% !important; border: 1px solid rgba(0,0,0,.18); }
+.swatches button.on { outline: 3px solid var(--accent); outline-offset: 1px; }
+.pickrow { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; font-weight: 600; }
+.pickrow input[type=color] { width: 64px; height: 36px; border: 0; padding: 0; background: none; }
+
 /* ---- client links ---- */
 .shlink { background: rgba(47,111,224,.08); border-radius: 12px; padding: 8px; margin: 8px 0; }
 .shlink input { width: 100%; min-width: 0; font-size: 12.5px; -webkit-user-select: text; user-select: text; }
