@@ -119,7 +119,9 @@ and tilting. Snap = 5 cm and 15°. Undo steps back; Reset puts the object back. 
 2. Title, how long the link works (1 week to 1 year), include your notes or not, **Create client link**. The model
    uploads and the phone's Share sheet opens (WhatsApp, mail...); Copy also works.
 3. **Your links** shows each link: valid until, how often it was opened, size. The bin withdraws a link at once and
-   deletes its files. Links made on this device can be copied again (the share icon).
+   deletes its files. Links made on this device can be copied again (the share icon). The update icon (circular
+   arrow) puts the model open now into that link: same address, same expiry, so a QR code printed on drawings keeps
+   working. For drawings, make the link with **No expiry**.
 
 The client opens `https://ururinfo-collab.github.io/modelviewer/#view=...` on any phone or computer, no install or
 account: the model, your scenes, layers, section, measure, walk, See-thru, Look, Sun, photo, record, AR and the

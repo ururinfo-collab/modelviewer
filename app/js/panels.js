@@ -8,7 +8,7 @@ import { STYLES, BACKGROUNDS, GROUNDS, COLOURS } from './look.js';
 import { quantities, toCSV } from './quantities.js';
 import { PRESETS, GEMINI_MODELS } from './ai.js';
 
-export const APP_VERSION = '1.25.0';
+export const APP_VERSION = '1.26.0';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look', qty: 'Quantities', compare: 'Compare revisions', notes: 'Notes', ai: 'AI render', share: 'Client link', floors: 'Floors', export: 'Save' };
 
@@ -738,9 +738,9 @@ export class Panels {
       h += '<p class="note" id="shStatus"></p>';
     } else {
       const order = app.chosenOrder?.(), nNotes = app.notes.list.length;
-      const days = this.shareDays || 30;
+      const days = this.shareDays ?? 30;
       h += `<div class="field"><label>Title</label><input id="shTitle" type="text" value="${esc(this.shareTitle ?? (v.meta?.title || document.title))}"></div>`;
-      h += '<p class="note">The link works for</p><div class="seg">' + [[7, '1 week'], [30, '30 days'], [90, '3 months'], [365, '1 year']].map(([d, n]) =>
+      h += '<p class="note">The link works for</p><div class="seg">' + [[7, '1 week'], [30, '30 days'], [90, '3 months'], [365, '1 year'], [0, 'No expiry']].map(([d, n]) =>
         `<button data-days="${d}" class="${days === d ? 'on' : ''}">${n}</button>`).join('') + '</div>';
       h += `<label class="toggle">Include my notes (${nNotes}, read-only)<input type="checkbox" data-k="shNotes" ${this.shareNotes !== false && nNotes ? 'checked' : ''} ${nNotes ? '' : 'disabled'}></label>`;
       h += `<label class="toggle">Build time-lapse with ${order ? 'my build order' : 'the automatic order'}<input type="checkbox" checked disabled></label>`;
@@ -772,6 +772,19 @@ export class Panels {
       if (!b) return;
       if (b.dataset.days) { this.shareDays = +b.dataset.days; return this.render('share', true); }
       if (b.dataset.copy) return copy(S.links[b.dataset.copy]);
+      if (b.dataset.replace) {
+        const s = S.shares?.find(x => x.id === b.dataset.replace);
+        if (!confirm(`Put the open model into "${s?.title || 'this link'}"? The link address stays the same (QR codes keep working); clients see the new model next time they open it.`)) return;
+        b.disabled = true;
+        try {
+          await S.replace(b.dataset.replace, { title: s?.title, notes: this.shareNotes !== false && app.notes.list.length > 0, order: app.chosenOrder?.() || null },
+            (f, msg) => say(`${msg} ${Math.round(f * 100)}%`));
+          app.toast('Link updated with the open model');
+          S.shares = null;
+          this.render('share', true);
+        } catch (err) { b.disabled = false; say(err.message, true); }
+        return;
+      }
       if (b.dataset.revoke) {
         if (!confirm('Withdraw this link? The client can no longer open it, and its files are deleted.')) return;
         try { await S.revoke(b.dataset.revoke); S.shares = null; this.render('share', true); } catch (err) { say(err.message, true); }
@@ -790,7 +803,7 @@ export class Panels {
         this.shareTitle = this.body.querySelector('#shTitle').value.trim();
         const notes = !!this.body.querySelector('[data-k=shNotes]')?.checked;
         try {
-          const r = await S.create({ title: this.shareTitle || document.title, days: this.shareDays || 30, notes, order: app.chosenOrder?.() || null },
+          const r = await S.create({ title: this.shareTitle || document.title, days: this.shareDays ?? 30, notes, order: app.chosenOrder?.() || null },
             (f, msg) => say(`${msg} ${Math.round(f * 100)}%`));
           this.shareLast = r.link;
           S.shares = null;
@@ -813,8 +826,10 @@ export class Panels {
     const day = t => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
     return list.map(s => {
       const gone = s.revoked ? 'withdrawn' : new Date(s.expires_at) < new Date() ? 'expired' : !s.ready ? 'unfinished' : '';
-      return `<div class="row ${gone ? 'off' : ''}"><span class="nm">${esc(s.title)}<small>${gone || `until ${day(s.expires_at)}`} · opened ${s.views}× · ${(s.bytes / 1048576).toFixed(1)} MB</small></span>` +
+      const until = new Date(s.expires_at).getFullYear() >= 2099 ? 'no expiry' : `until ${day(s.expires_at)}`;
+      return `<div class="row ${gone ? 'off' : ''}"><span class="nm">${esc(s.title)}<small>${gone || until} · opened ${s.views}× · ${(s.bytes / 1048576).toFixed(1)} MB</small></span>` +
         (!gone && S.links[s.id] ? `<button class="ib" data-copy="${esc(s.id)}" data-icon="share" title="Copy the link"></button>` : '') +
+        (!gone ? `<button class="ib" data-replace="${esc(s.id)}" data-icon="reset" title="Update this link with the open model (same address)"></button>` : '') +
         (!gone || gone === 'unfinished' ? `<button class="ib" data-revoke="${esc(s.id)}" data-icon="trash" title="${gone ? 'Remove' : 'Withdraw the link'}"></button>` : '') + '</div>';
     }).join('');
   }

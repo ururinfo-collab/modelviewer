@@ -9,6 +9,7 @@ const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SE
 });
 const BUCKET = "mv-shares";
 const MAX_FILE = 50 * 1024 * 1024;
+const NO_EXPIRY = "2099-12-31T00:00:00.000Z";
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "content-type",
@@ -103,12 +104,14 @@ async function handle(b: Record<string, unknown>) {
       if (!files.length || !b.model) throw new Fail("Nothing to share.");
       const big = files.find((f) => f.size > MAX_FILE);
       if (big) throw new Fail(`${big.name} is over 50 MB, the limit for one file.`);
-      const days = Math.min(365, Math.max(1, +(b.days ?? 30) || 30));
+      // days 0: no expiry (links printed on drawings as a QR code); otherwise 1 to 365 days
+      const days = b.days === 0 ? 0 : Math.min(365, Math.max(1, +(b.days ?? 30) || 30));
       const id = b64url(random(9));
       const token = b64url(random(24));
       const row = {
         id, token_hash: await sha256(token), title: String(b.title || b.model).slice(0, 200), model: safeName(String(b.model)),
-        files, bytes: files.reduce((a, f) => a + f.size, 0), expires_at: new Date(Date.now() + days * 86_400_000).toISOString(),
+        files, bytes: files.reduce((a, f) => a + f.size, 0),
+        expires_at: days ? new Date(Date.now() + days * 86_400_000).toISOString() : NO_EXPIRY,
       };
       const { error } = await db.from("mv_shares").insert(row);
       if (error) throw new Fail(error.message, 500);
@@ -119,6 +122,31 @@ async function handle(b: Record<string, unknown>) {
         uploads.push({ name: f.name, url: data.signedUrl });
       }
       return { id, token, expires: row.expires_at, uploads };
+    }
+    // the same link, a new model: the address (id + secret) and the expiry stay, the files are overwritten
+    case "replace": {
+      await owner(b.code);
+      const id = String(b.id);
+      const { data: s } = await db.from("mv_shares").select("files, ready, revoked, expires_at").eq("id", id).maybeSingle();
+      if (!s || !s.ready) throw new Fail("Unknown link.", 404);
+      if (s.revoked || new Date(s.expires_at) < new Date()) throw new Fail("This link is withdrawn or expired: make a new one.", 410);
+      const files = (b.files as { name: string; size: number }[] ?? []).map((f) => ({ name: safeName(String(f.name)), size: +f.size || 0 }));
+      if (!files.length || !b.model) throw new Fail("Nothing to share.");
+      const big = files.find((f) => f.size > MAX_FILE);
+      if (big) throw new Fail(`${big.name} is over 50 MB, the limit for one file.`);
+      const keep = new Set(files.map((f) => f.name));
+      const old = (s.files as { name: string }[]).filter((f) => !keep.has(f.name)).map((f) => `${id}/${f.name}`);
+      if (old.length) await db.storage.from(BUCKET).remove(old);
+      const upd: Record<string, unknown> = { files, model: safeName(String(b.model)), bytes: files.reduce((a, f) => a + f.size, 0) };
+      if (b.title) upd.title = String(b.title).slice(0, 200);
+      await db.from("mv_shares").update(upd).eq("id", id);
+      const uploads = [];
+      for (const f of files) {
+        const { data, error: e } = await db.storage.from(BUCKET).createSignedUploadUrl(`${id}/${f.name}`, { upsert: true });
+        if (e) throw new Fail(e.message, 500);
+        uploads.push({ name: f.name, url: data.signedUrl });
+      }
+      return { id, uploads };
     }
     case "finish": {
       await owner(b.code);

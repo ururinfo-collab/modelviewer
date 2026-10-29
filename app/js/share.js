@@ -91,8 +91,8 @@ export class Share {
     return out;
   }
 
-  // opts: { title, days, notes (bool), order (sequence or null) }
-  async create(opts, onProgress = () => {}) {
+  // the files of a link: the open model, the build order, and share.json (title, notes, colours)
+  async pack(opts, onProgress) {
     const app = this.app, src = app.sourceFiles;
     if (!src?.length) throw new Error('Open the model from a file first (a model opened from a link cannot be shared again).');
     onProgress(0, 'Reading the model...');
@@ -105,20 +105,29 @@ export class Share {
     const manifest = { format: 'mv-share/1', title: opts.title, model, created: new Date().toISOString(),
       notes: opts.notes ? app.notes.list : [], colours: app.colours?.data };
     files.push({ name: 'share.json', blob: new Blob([JSON.stringify(manifest)], { type: 'application/json' }) });
+    return { files, model };
+  }
 
+  async send(files, uploads, onProgress) {
+    const total = files.reduce((a, f) => a + f.blob.size, 0);
+    let done = 0;
+    for (const f of files) {
+      const u = uploads.find(x => x.name === f.name);
+      // one retry: phone connections drop now and then
+      await upload(u.url, f.blob, n => onProgress((done + n) / total, `Uploading ${f.name}...`))
+        .catch(() => upload(u.url, f.blob, n => onProgress((done + n) / total, `Uploading ${f.name} (again)...`)));
+      done += f.blob.size;
+    }
+  }
+
+  // opts: { title, days (0 = no expiry), notes (bool), order (sequence or null) }
+  async create(opts, onProgress = () => {}) {
+    const { files, model } = await this.pack(opts, onProgress);
     onProgress(0, 'Preparing the link...');
     const res = await call('create', { code: this.code, title: opts.title, days: opts.days, model,
       files: files.map(f => ({ name: f.name, size: f.blob.size })) });
-    const total = files.reduce((a, f) => a + f.blob.size, 0);
-    let done = 0;
     try {
-      for (const f of files) {
-        const u = res.uploads.find(x => x.name === f.name);
-        // one retry: phone connections drop now and then
-        await upload(u.url, f.blob, n => onProgress((done + n) / total, `Uploading ${f.name}...`))
-          .catch(() => upload(u.url, f.blob, n => onProgress((done + n) / total, `Uploading ${f.name} (again)...`)));
-        done += f.blob.size;
-      }
+      await this.send(files, res.uploads, onProgress);
       await call('finish', { code: this.code, id: res.id });
     } catch (e) {
       call('discard', { code: this.code, id: res.id }).catch(() => {});   // no half-made link left behind
@@ -128,6 +137,17 @@ export class Share {
     store.set(LINKS_KEY, { ...this.links, [res.id]: link });
     onProgress(1, 'Done');
     return { id: res.id, link, expires: res.expires };
+  }
+
+  // Put the open model into an existing link: same address (a QR code on the drawings keeps working), same expiry.
+  async replace(id, opts, onProgress = () => {}) {
+    const { files, model } = await this.pack(opts, onProgress);
+    onProgress(0, 'Preparing the update...');
+    const res = await call('replace', { code: this.code, id, title: opts.title, model,
+      files: files.map(f => ({ name: f.name, size: f.blob.size })) });
+    await this.send(files, res.uploads, onProgress);
+    await call('finish', { code: this.code, id });
+    onProgress(1, 'Done');
   }
 
   // the client's side
