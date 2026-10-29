@@ -13,6 +13,7 @@ import { ContactShadow, skyEnvironment, ProfileShader, Vignette } from './presen
 import { findJoints, flushPaint } from './joints.js';
 import { categorize } from './categories.js';
 import { autoStage } from './sequence.js';
+import { EdgeBatch } from './edgebatch.js';
 
 const CREASE = THREE.MathUtils.degToRad(40);   // same 40 degrees BuildLapse uses for edge lines
 const BG = 0xeef0f2;
@@ -103,6 +104,7 @@ export class Viewer extends EventTarget {
     // see-through edge lines: lighter grey and fainter, as in BuildLapse
     this.edgeGhostMat = new THREE.LineBasicMaterial({ color: 0x70757c, transparent: true, opacity: 0.33, depthWrite: false });
     this.edges = true;
+    this.edgeBatch = new EdgeBatch(this);   // all edge lines in two draw calls
     this.shadows = false;
     this.selected = null;
     this.selSet = new Set();
@@ -417,26 +419,41 @@ export class Viewer extends EventTarget {
     this.fitNear();
     this.applyTwoPoint();
     this.fitFog();
-    // sun shadows: redraw the shadow map only when something changed (also when a section cut moved)
-    if (this.shadows) {
-      const clipKey = r.clippingPlanes.map(p => p.constant.toFixed(3) + p.normal.toArray().join()).join('|');
-      if (this.shadowDirty || clipKey !== this._clipKey || this.tickers.size || this.continuous > 0) r.shadowMap.needsUpdate = true;
-      this.shadowDirty = false;
-      this._clipKey = clipKey;
-    }
-    // soft corners and outlines only on solid views (they would darken see-through glass)
-    const post = (this.ao || this.profile) && this.composer && this.viewMode === 'solid';
-    const moving = this.postWhenStill && performance.now() - this._moved < 200;
-    if (post && this.profile) {
-      const u = this.profilePass.uniforms;
-      u.tDepth.value = this.gtao.depthTexture;
-      u.cameraNear.value = this.camera.near;
-      u.cameraFar.value = this.camera.far;
-    }
-    if (post && !moving) this.composer.render();
-    else {
-      r.render(this.scene, this.camera);
-      if (post) this._postPending = true;
+    // world matrices once per frame (the passes below reuse them); the edge batch reads them and reports moved parts
+    this.scene.updateMatrixWorld();
+    const auto = this.scene.matrixWorldAutoUpdate;
+    this.scene.matrixWorldAutoUpdate = false;
+    try {
+      if (this.edgeBatch.begin()) this.shadowDirty = true;
+      // sun shadows: redraw the shadow map only when something changed: parts shown / hidden / see-through,
+      // moved parts, the sun, a section cut. Not on every animation frame (a Build frame with no new part,
+      // an orbit or a camera flight leaves the shadows as they are).
+      if (this.shadows) {
+        const clipKey = r.clippingPlanes.map(p => p.constant.toFixed(3) + p.normal.toArray().join()).join('|');
+        if (this.shadowDirty || clipKey !== this._clipKey) r.shadowMap.needsUpdate = true;
+        this.shadowDirty = false;
+        this._clipKey = clipKey;
+      }
+      // soft corners and outlines only on solid views (they would darken see-through glass); phones skip them
+      // while the view moves, every device while an animation plays (Build, flights) unless it is being recorded;
+      // the still view gets them again 220 ms after it stops
+      const post = (this.ao || this.profile) && this.composer && this.viewMode === 'solid';
+      const animating = this.tickers.size > 0 && this.continuous === 0;
+      const moving = (this.postWhenStill || animating) && performance.now() - this._moved < 200;
+      if (post && this.profile) {
+        const u = this.profilePass.uniforms;
+        u.tDepth.value = this.gtao.depthTexture;
+        u.cameraNear.value = this.camera.near;
+        u.cameraFar.value = this.camera.far;
+      }
+      if (post && !moving) this.composer.render();
+      else {
+        r.render(this.scene, this.camera);
+        if (post) this._postPending = true;
+      }
+    } finally {
+      this.edgeBatch.end();
+      this.scene.matrixWorldAutoUpdate = auto;
     }
     this.vignette?.draw(r);
     for (const f of this.afterRender) f();
@@ -529,6 +546,7 @@ export class Viewer extends EventTarget {
 
   clearModel() {
     if (!this.root) return;
+    this.edgeBatch.dispose();
     this.select(null);
     this.scene.remove(this.root);
     const geos = new Set();
