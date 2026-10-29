@@ -44,8 +44,10 @@ export class Viewer extends EventTarget {
     // frame of orbiting: costs nothing on phones once drawn
     r.shadowMap.autoUpdate = false;
     this.shadowDirty = true;
-    // phones: soft corners and outlines only once the view stops moving
-    this.postWhenStill = !matchMedia('(hover: hover) and (pointer: fine)').matches;
+    // soft corners and outlines only once the view stops moving (all devices since 1.28.0: on a computer the
+    // second scene pass + 16-sample occlusion at full screen size made orbiting in Solid lag)
+    this.postWhenStill = true;
+    this.isPhone = !matchMedia('(hover: hover) and (pointer: fine)').matches;   // a computer keeps them in recordings
     this._moved = 0;
 
     this.scene = new THREE.Scene();
@@ -434,12 +436,12 @@ export class Viewer extends EventTarget {
         this.shadowDirty = false;
         this._clipKey = clipKey;
       }
-      // soft corners and outlines only on solid views (they would darken see-through glass); phones skip them
-      // while the view moves, every device while an animation plays (Build, flights) unless it is being recorded;
-      // the still view gets them again 220 ms after it stops
+      // soft corners and outlines only on solid views (they would darken see-through glass), skipped while the
+      // view moves or an animation plays (Build, flights); the still view gets them 220 ms after it stops.
+      // A video recorded on a computer keeps them on every frame; phones skip them while recording too.
       const post = (this.ao || this.profile) && this.composer && this.viewMode === 'solid';
-      const animating = this.tickers.size > 0 && this.continuous === 0;
-      const moving = (this.postWhenStill || animating) && performance.now() - this._moved < 200;
+      const keepForVideo = this.continuous > 0 && !this.isPhone;
+      const moving = this.postWhenStill && !keepForVideo && performance.now() - this._moved < 200;
       if (post && this.profile) {
         const u = this.profilePass.uniforms;
         u.tDepth.value = this.gtao.depthTexture;
