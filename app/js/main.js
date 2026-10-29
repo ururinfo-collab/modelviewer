@@ -14,7 +14,7 @@ import { AIRender } from './ai.js';
 import { Share } from './share.js';
 import { Colours, SWATCHES, hexOf } from './colours.js';
 import { Explode } from './explode.js';
-import { detectLevels } from './levels.js';
+import { detectLevels, levelsFromOrder } from './levels.js';
 import { screenshot, Recorder, showSave } from './capture.js';
 import { Exporter } from './export.js';
 import { saveRecent, listRecent, getRecent, deleteRecent, getSetting, setSetting } from './store.js';
@@ -129,6 +129,7 @@ async function openFiles(files, keep = true) {
     // what a client link uploads (an order goes separately, the one Build uses)
     app.sourceFiles = app.client ? null : [main, ...files.filter(f => f !== main && !/\.sequence\.json$/i.test(f.name))];
     if (loaded.sequence) keepOrder(loaded.sequence);    // opened together with the model: keep it too
+    applyLevels();                                       // Floors from that order (or the saved one for this model)
     app.move = resetMove();
     app.history.clear();
     $('#title').textContent = viewer.meta.title || main.name.replace(/\.(skp|glb|gltf|dae)$/i, '');
@@ -704,6 +705,7 @@ function useOrder(name) {
   setSetting(viewer.modelName, 'order', name);
   s.stop();
   s.data = name === 'auto' ? null : savedOrders()[name] || app.loaded.sequence;
+  applyLevels(s.data);
   s.start();
   updateBuildBar();
   toast(s.data ? `BuildLapse order: ${s.stages.length} stages${s.unmatched ? `, ${s.unmatched} new parts placed by tag` : ''}`
@@ -1033,12 +1035,16 @@ function selAction(a) {
 app.colours = new Colours(app);
 app.explode = new Explode(app);
 // levels (Underground, Ground floor, ..., Roof) of each newly opened model
-viewer.addEventListener('model', () => {
-  app.levels = detectLevels(viewer);
+viewer.addEventListener('model', () => applyLevels(null));
+// with a build order that gives levels, Floors follows it (called again once the model's own order is known)
+function applyLevels(order = chosenOrder()) {
+  const auto = detectLevels(viewer);
+  app.levels = order ? levelsFromOrder(viewer, auto, order) : auto;
   for (const [E, lv] of app.levels.of) E.level = lv;
   viewer.levelShow = null;
   app.panels.levelSel = null;
-});
+  if (app.explode) app.explode.items = null;
+}
 let paintScope = 'mat';
 function openPaint(E) {
   const C = app.colours, src = C.paintOf(E);

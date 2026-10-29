@@ -77,3 +77,42 @@ export function detectLevels(v) {
   const count = names.map((_, k) => [...of.values()].filter(l => l === k).length);
   return { names, elev, of, count, gf: 1, roof: roofIdx };
 }
+
+// Levels from a build-order file that gives one per part (sequence.levels + a 7th field per part): Floors then
+// follows the same split as Build (drains under the slab Underground, stacks with the roof...). Parts are matched
+// as in Build (name, then the nearest centre); a part the file does not know keeps its own level by name.
+export function levelsFromOrder(v, auto, data) {
+  if (!data?.levels?.length || !data.parts?.some(p => p.length > 6)) return auto;
+  const names = data.levels.slice();
+  const byName = new Map();
+  for (const p of data.parts) {
+    if (p.length < 7) continue;
+    if (!byName.has(p[0])) byName.set(p[0], []);
+    byName.get(p[0]).push({ lv: p[6], c: new THREE.Vector3(p[3], p[4], p[5]), used: false });
+  }
+  const box = new THREE.Box3(), c = new THREE.Vector3();
+  const of = new Map();
+  for (const [E, alv] of auto.of) {
+    const list = byName.get(E.name);
+    let lv = null;
+    if (list) {
+      box.makeEmpty();
+      for (const m of E.meshes) box.expandByObject(m);
+      box.getCenter(c);
+      let best = null, bd = Infinity;
+      for (const p of list) {
+        if (p.used) continue;
+        const d = p.c.distanceToSquared(c);
+        if (d < bd) { bd = d; best = p; }
+      }
+      best = best || list[0];
+      best.used = true;
+      lv = best.lv;
+    }
+    if (lv == null) { const k = names.indexOf(auto.names[alv]); lv = k >= 0 ? k : names.indexOf('Ground floor'); }
+    of.set(E, lv);
+  }
+  const elev = names.map(n => { const k = auto.names.indexOf(n); return k >= 0 ? auto.elev[k] : null; });
+  const count = names.map((_, k) => [...of.values()].filter(l => l === k).length);
+  return { names, elev, of, count, gf: Math.max(0, names.indexOf('Ground floor')), roof: names.indexOf('Roof'), fromOrder: true };
+}

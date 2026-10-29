@@ -177,6 +177,9 @@ English and Myanmar and a progress bar), Order.
   by themselves when at least a third of the part names match; Order › Automatic switches back per model. Parts are matched by name, so the file keeps working as the model changes: parts it
   does not know are put in the stage where most of their tag (else category) went; site context
   ("indicative" / Context tags) stays visible throughout.
+- **Order files with levels** (`"levels": [...]` and a 7th field per part, e.g. the DHO Rev 06 level-by-level
+  order made by `ModelBuilder\work\scripts\seq_rev06.py`): Floors then follows the order too (drains laid under
+  the slab are Underground, downpipes and stacks go with the roof). Without levels, Floors finds them from the slabs.
 
 ## Publishing (GitHub Pages, one time)
 

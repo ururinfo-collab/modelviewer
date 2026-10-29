@@ -8,7 +8,7 @@ import { STYLES, BACKGROUNDS, GROUNDS, COLOURS } from './look.js';
 import { quantities, toCSV } from './quantities.js';
 import { PRESETS, GEMINI_MODELS } from './ai.js';
 
-export const APP_VERSION = '1.28.0';
+export const APP_VERSION = '1.29.0';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look', qty: 'Quantities', compare: 'Compare revisions', notes: 'Notes', ai: 'AI render', share: 'Client link', floors: 'Floors', export: 'Save' };
 
@@ -673,7 +673,9 @@ export class Panels {
       h += '<p class="note">' + L.names.map((n, k) => (L.count[k] ? `<b>${esc(n)}</b> ${fmtE(L.elev[k])} · ${L.count[k]} objects` : '')).filter(Boolean).join('<br>') + '</p>';
       h += '<p class="note">Each level moves as one piece with even gaps: the ground floor stays, the floors above and the roof lift, the underground drops. Pick one level above to take it apart in layers instead. Put back restores everything exactly.</p>';
     }
-    h += '<p class="note">Levels come from the floor slabs; each object belongs to the floor it stands on (slabs and beams to the floor they carry).</p>';
+    h += L?.fromOrder
+      ? '<p class="note">Levels follow the build order: what is laid with the underground works (drains under the slab, buried mains) is Underground; stacks and downpipes go with the roof.</p>'
+      : '<p class="note">Levels come from the floor slabs; each object belongs to the floor it stands on (slabs and beams to the floor they carry).</p>';
     this.body.innerHTML = h;
     const showLevel = (k, withBelow) => {
       this.levelSel = k;
