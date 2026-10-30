@@ -123,13 +123,15 @@ async function handle(b: Record<string, unknown>) {
       }
       return { id, token, expires: row.expires_at, uploads };
     }
-    // the same link, a new model: the address (id + secret) and the expiry stay, the files are overwritten
+    // the same link, a new model: the address (id + secret) and the expiry stay, the files are overwritten.
+    // restore: a withdrawn link comes back the same way (its QR codes work again); an expired one does not.
     case "replace": {
       await owner(b.code);
       const id = String(b.id);
       const { data: s } = await db.from("mv_shares").select("files, ready, revoked, expires_at").eq("id", id).maybeSingle();
       if (!s || !s.ready) throw new Fail("Unknown link.", 404);
-      if (s.revoked || new Date(s.expires_at) < new Date()) throw new Fail("This link is withdrawn or expired: make a new one.", 410);
+      if (new Date(s.expires_at) < new Date()) throw new Fail("This link has expired: make a new one.", 410);
+      if (s.revoked && !b.restore) throw new Fail("This link is withdrawn: restore it or make a new one.", 410);
       const files = (b.files as { name: string; size: number }[] ?? []).map((f) => ({ name: safeName(String(f.name)), size: +f.size || 0 }));
       if (!files.length || !b.model) throw new Fail("Nothing to share.");
       const big = files.find((f) => f.size > MAX_FILE);
@@ -137,7 +139,8 @@ async function handle(b: Record<string, unknown>) {
       const keep = new Set(files.map((f) => f.name));
       const old = (s.files as { name: string }[]).filter((f) => !keep.has(f.name)).map((f) => `${id}/${f.name}`);
       if (old.length) await db.storage.from(BUCKET).remove(old);
-      const upd: Record<string, unknown> = { files, model: safeName(String(b.model)), bytes: files.reduce((a, f) => a + f.size, 0) };
+      const upd: Record<string, unknown> = { files, model: safeName(String(b.model)), bytes: files.reduce((a, f) => a + f.size, 0),
+        revoked: false };
       if (b.title) upd.title = String(b.title).slice(0, 200);
       await db.from("mv_shares").update(upd).eq("id", id);
       const uploads = [];

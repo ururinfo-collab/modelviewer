@@ -121,7 +121,8 @@ and tilting. Snap = 5 cm and 15°. Undo steps back; Reset puts the object back. 
 3. **Your links** shows each link: valid until, how often it was opened, size. The bin withdraws a link at once and
    deletes its files. Links made on this device can be copied again (the share icon). The update icon (circular
    arrow) puts the model open now into that link: same address, same expiry, so a QR code printed on drawings keeps
-   working. For drawings, make the link with **No expiry**.
+   working. For drawings, make the link with **No expiry**. A withdrawn link (not expired) has a restore icon (back
+   arrow): it puts the open model in and gives the link its old address back, so its QR codes work again.
 
 The client opens `https://ururinfo-collab.github.io/modelviewer/#view=...` on any phone or computer, no install or
 account: the model, your scenes, layers, section, measure, walk, See-thru, Look, Sun, photo, record, AR and the

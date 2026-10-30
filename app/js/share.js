@@ -140,13 +140,19 @@ export class Share {
   }
 
   // Put the open model into an existing link: same address (a QR code on the drawings keeps working), same expiry.
-  async replace(id, opts, onProgress = () => {}) {
+  // restore: a withdrawn link comes back this way; if the upload fails it is withdrawn again.
+  async replace(id, opts, onProgress = () => {}, restore = false) {
     const { files, model } = await this.pack(opts, onProgress);
-    onProgress(0, 'Preparing the update...');
-    const res = await call('replace', { code: this.code, id, title: opts.title, model,
+    onProgress(0, restore ? 'Preparing the restore...' : 'Preparing the update...');
+    const res = await call('replace', { code: this.code, id, title: opts.title, model, restore,
       files: files.map(f => ({ name: f.name, size: f.blob.size })) });
-    await this.send(files, res.uploads, onProgress);
-    await call('finish', { code: this.code, id });
+    try {
+      await this.send(files, res.uploads, onProgress);
+      await call('finish', { code: this.code, id });
+    } catch (e) {
+      if (restore) call('revoke', { code: this.code, id }).catch(() => {});
+      throw e;
+    }
     onProgress(1, 'Done');
   }
 

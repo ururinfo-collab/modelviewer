@@ -8,7 +8,7 @@ import { STYLES, BACKGROUNDS, GROUNDS, COLOURS } from './look.js';
 import { quantities, toCSV } from './quantities.js';
 import { PRESETS, GEMINI_MODELS } from './ai.js';
 
-export const APP_VERSION = '1.29.0';
+export const APP_VERSION = '1.30.0';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look', qty: 'Quantities', compare: 'Compare revisions', notes: 'Notes', ai: 'AI render', share: 'Client link', floors: 'Floors', export: 'Save' };
 
@@ -774,14 +774,17 @@ export class Panels {
       if (!b) return;
       if (b.dataset.days) { this.shareDays = +b.dataset.days; return this.render('share', true); }
       if (b.dataset.copy) return copy(S.links[b.dataset.copy]);
-      if (b.dataset.replace) {
-        const s = S.shares?.find(x => x.id === b.dataset.replace);
-        if (!confirm(`Put the open model into "${s?.title || 'this link'}"? The link address stays the same (QR codes keep working); clients see the new model next time they open it.`)) return;
+      if (b.dataset.replace || b.dataset.restore) {
+        const restore = !!b.dataset.restore, id = b.dataset.replace || b.dataset.restore;
+        const s = S.shares?.find(x => x.id === id);
+        if (!confirm(restore
+          ? `Restore "${s?.title || 'this link'}" with the open model? It gets its old address back, so the link and its QR codes work again.`
+          : `Put the open model into "${s?.title || 'this link'}"? The link address stays the same (QR codes keep working); clients see the new model next time they open it.`)) return;
         b.disabled = true;
         try {
-          await S.replace(b.dataset.replace, { title: s?.title, notes: this.shareNotes !== false && app.notes.list.length > 0, order: app.chosenOrder?.() || null },
-            (f, msg) => say(`${msg} ${Math.round(f * 100)}%`));
-          app.toast('Link updated with the open model');
+          await S.replace(id, { title: s?.title, notes: this.shareNotes !== false && app.notes.list.length > 0, order: app.chosenOrder?.() || null },
+            (f, msg) => say(`${msg} ${Math.round(f * 100)}%`), restore);
+          app.toast(restore ? 'Link restored with the open model' : 'Link updated with the open model');
           S.shares = null;
           this.render('share', true);
         } catch (err) { b.disabled = false; say(err.message, true); }
@@ -832,6 +835,7 @@ export class Panels {
       return `<div class="row ${gone ? 'off' : ''}"><span class="nm">${esc(s.title)}<small>${gone || until} · opened ${s.views}× · ${(s.bytes / 1048576).toFixed(1)} MB</small></span>` +
         (!gone && S.links[s.id] ? `<button class="ib" data-copy="${esc(s.id)}" data-icon="share" title="Copy the link"></button>` : '') +
         (!gone ? `<button class="ib" data-replace="${esc(s.id)}" data-icon="reset" title="Update this link with the open model (same address)"></button>` : '') +
+        (gone === 'withdrawn' && new Date(s.expires_at) > new Date() ? `<button class="ib" data-restore="${esc(s.id)}" data-icon="undo" title="Restore this link with the open model (same address, QR codes work again)"></button>` : '') +
         (!gone || gone === 'unfinished' ? `<button class="ib" data-revoke="${esc(s.id)}" data-icon="trash" title="${gone ? 'Remove' : 'Withdraw the link'}"></button>` : '') + '</div>';
     }).join('');
   }
