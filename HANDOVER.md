@@ -1,4 +1,4 @@
-# Model Viewer: hand-over (28.10.2026)
+# Model Viewer: hand-over (31.10.2026)
 
 Read this first, then README.md (every feature, every command, how things work).
 
@@ -9,7 +9,7 @@ that applies the viewer's "one plastered surface" look and flicker fix to the .s
 - Folder: `C:\Users\ARKAR\Desktop\ModelViewer` (git, branch main)
 - Live: https://ururinfo-collab.github.io/modelviewer/ (repo ururinfo-collab/modelviewer, GitHub Pages via Actions,
   publishes `app/` on every push to main; git credential is stored on the PC)
-- Live app version: **1.25.0** (Save: .glb and look file for SketchUp).
+- Live app version: **1.30.0** (restore a withdrawn client link).
 
 ## Release routine (app)
 - No build step: three.js r180 and openskp are vendored in `app/vendor`. Edit, reload.
@@ -55,6 +55,21 @@ Rev05 (28.10): copy correct (wall paint, door by path, 22,755 lines, seals, flic
 Why not abort: joints + flicker + joints + save_copy in one operation leaves the changes in place after
 `abort_operation` and `Sketchup.undo` (each smaller combination aborts fine). Viewer paths contain levels SketchUp
 lacks (ROOT, name groups like "D1 GF"): `by_path` steps over names it cannot find.
+
+## App releases 1.26 → 1.30 (29.–30.10), not yet confirmed by Lucie
+- 1.26.0 Client links: update a link in place (same address and secret, files overwritten) and a no-expiry
+  option (`days: 0`, stored as 2099-12-31), for QR codes printed on drawings.
+- 1.27.0 Faster viewer: edge lines of all parts in two merged draw calls (normal, see-through), shadow map only
+  redrawn when parts move, no soft corners while an animation plays (kept when recording). Rev06: 6,219 → 3,134
+  draw calls, still frame 22 → 11 ms.
+- 1.28.0 Soft corners (AO) and outlines only once the view is still (220 ms), on every device; fixes Solid view
+  lag in Firefox. Recorded videos keep them every frame. Orbit frame 24 → 13.5 ms on Rev06.
+- 1.29.0 Floors follows the build order when the order file carries `levels` and a level per part (7th field):
+  drains under the slab = Underground, downpipes and stacks with the roof, paving/boundary/railings on their
+  floor. Without levels Floors finds them from the slabs as before.
+- 1.30.0 Restore a withdrawn client link (same address, its QR codes work again); an expired one cannot be.
+- 1.26 and 1.30 changed the Edge Function `supabase/functions/mv-share/index.ts` (`replace` action, `restore`
+  flag). Pushing main does NOT deploy it (Pages only): check it is deployed on Supabase before Lucie tests links.
 
 Open offer to Lucie: keep slab edges (the floor band) out of the wall paint if she wants the band grey.
 Possible later: install the script permanently in SketchUp's Plugins folder (only with her OK).
