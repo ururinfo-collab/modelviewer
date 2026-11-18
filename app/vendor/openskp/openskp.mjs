@@ -1532,8 +1532,12 @@ function buildLocalFaceGroups(builder, ctx) {
   for (const [_fId, fData] of builder.faces.entries()) {
     if (ctx.respectVisibility && fData.hidden) continue;
     const fallbackColor = ctx.inheritedMaterial?.color ?? ctx.fallbackLayerColor;
-    const frontMat = ctx.resolveMaterial(fData.materialId) ?? ctx.inheritedMaterial;
-    const backMat = ctx.resolveMaterial(fData.backMaterialId) ?? ctx.inheritedMaterial;
+    // ModelViewer patch (1.31.0): a side with no paint takes the other side's paint, as the SketchUp
+    // export does (front, else the group's paint, else back). Before, a bare back fell to the tag colour,
+    // so reversed faces showed purple beams / green door frames.
+    const ownFront = ctx.resolveMaterial(fData.materialId), ownBack = ctx.resolveMaterial(fData.backMaterialId);
+    const frontMat = ownFront ?? ctx.inheritedMaterial ?? ownBack;
+    const backMat = ownBack ?? ownFront ?? ctx.inheritedMaterial;
     const frontColor = frontMat?.color ?? fallbackColor;
     const backColor = backMat?.color ?? fallbackColor;
     const loops = [];

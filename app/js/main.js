@@ -14,7 +14,7 @@ import { AIRender } from './ai.js';
 import { Share } from './share.js';
 import { Colours, SWATCHES, hexOf } from './colours.js';
 import { Explode } from './explode.js';
-import { detectLevels, levelsFromOrder } from './levels.js';
+import { detectLevels, levelsFromOrder, levelsFromLabels } from './levels.js';
 import { screenshot, Recorder, showSave } from './capture.js';
 import { Exporter } from './export.js';
 import { saveRecent, listRecent, getRecent, deleteRecent, getSetting, setSetting } from './store.js';
@@ -1038,7 +1038,7 @@ app.explode = new Explode(app);
 viewer.addEventListener('model', () => applyLevels(null));
 // with a build order that gives levels, Floors follows it (called again once the model's own order is known)
 function applyLevels(order = chosenOrder()) {
-  const auto = detectLevels(viewer);
+  const auto = levelsFromLabels(viewer, detectLevels(viewer));   // labels saved in the model, else found from the slabs
   app.levels = order ? levelsFromOrder(viewer, auto, order) : auto;
   for (const [E, lv] of app.levels.of) E.level = lv;
   viewer.levelShow = null;

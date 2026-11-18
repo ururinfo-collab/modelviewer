@@ -66,7 +66,10 @@ function stageFromTag(tag) {
   return null;
 }
 
+// a stage saved in the model (ModelViewer: stage) wins; else the name, the tag, the category
+const STAGE_KEYS = new Set([...STAGES.map(s => s[0]), 'ctx']);
 export function autoStage(E) {
+  if (STAGE_KEYS.has(E.labels?.stage)) return E.labels.stage;
   if (/\bpv\b|solar panel|solar module/i.test(E.name)) return 'solar';
   return stageFromTag(E.tag) ?? FROM_CATEGORY[E.cat] ?? 'other';
 }

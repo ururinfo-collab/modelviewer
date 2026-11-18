@@ -8,7 +8,7 @@ import { STYLES, BACKGROUNDS, GROUNDS, COLOURS } from './look.js';
 import { quantities, toCSV } from './quantities.js';
 import { PRESETS, GEMINI_MODELS } from './ai.js';
 
-export const APP_VERSION = '1.30.0';
+export const APP_VERSION = '1.31.0';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const TITLES = { layers: 'Layers', tree: 'Model tree', info: 'Object info', section: 'Section cut', sun: 'Sun and shadows', settings: 'More', look: 'Look', qty: 'Quantities', compare: 'Compare revisions', notes: 'Notes', ai: 'AI render', share: 'Client link', floors: 'Floors', export: 'Save' };
 
@@ -299,7 +299,7 @@ export class Panels {
     const today = new Date();
     const d = { date: today.toISOString().slice(0, 10), minutes: 10 * 60, shadows: false };
     if (loc && loc.lat != null) {
-      Object.assign(d, { lat: loc.lat, lon: loc.lon, tz: loc.tz ?? 0, north: loc.north ?? 0, city: loc.city || '' });
+      Object.assign(d, { lat: loc.lat, lon: loc.lon, tz: loc.tz ?? 0, north: Math.round((loc.north ?? 0) * 100) / 100, city: loc.city || '' });
       if (loc.time) { d.date = loc.time.slice(0, 10); d.minutes = +loc.time.slice(11, 13) * 60 + +loc.time.slice(14, 16); }
       d.shadows = !!loc.shadows;
     } else Object.assign(d, FALLBACK);
@@ -307,7 +307,13 @@ export class Panels {
   }
 
   sunInit() {
-    this.sunState = { ...this.sunDefaults(), ...getSetting(this.v.modelName, 'sun', {}) };
+    // a saved sun keeps its site and north only while the model's own location is the one it was saved against:
+    // once the model gets its geo-location or north angle (SketchUp), that wins over what was typed before
+    const d = this.sunDefaults(), saved = { ...getSetting(this.v.modelName, 'sun', {}) };
+    const base = `${d.lat},${d.lon},${d.tz},${d.north}`;
+    const unset = Math.abs(d.lat - SKETCHUP_DEFAULT.lat) < 0.05 && Math.abs(d.lon - SKETCHUP_DEFAULT.lon) < 0.05;
+    if (saved.base !== base && !(saved.base == null && unset)) for (const k of ['lat', 'lon', 'tz', 'north', 'city']) delete saved[k];
+    this.sunState = { ...d, ...saved, base };
     this.v.setShadows(!!this.sunState.shadows);
     this.applySun();
   }
@@ -675,6 +681,8 @@ export class Panels {
     }
     h += L?.fromOrder
       ? '<p class="note">Levels follow the build order: what is laid with the underground works (drains under the slab, buried mains) is Underground; stacks and downpipes go with the roof.</p>'
+      : L?.fromLabels
+      ? '<p class="note">Levels come from the labels saved in the model (each part carries its level).</p>'
       : '<p class="note">Levels come from the floor slabs; each object belongs to the floor it stands on (slabs and beams to the floor they carry).</p>';
     this.body.innerHTML = h;
     const showLevel = (k, withBelow) => {

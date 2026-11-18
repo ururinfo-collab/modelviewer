@@ -11,7 +11,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { ContactShadow, skyEnvironment, ProfileShader, Vignette } from './present.js';
 import { findJoints, flushPaint } from './joints.js';
-import { categorize } from './categories.js';
+import { categorize, CATEGORIES, OTHER } from './categories.js';
 import { autoStage } from './sequence.js';
 import { EdgeBatch } from './edgebatch.js';
 
@@ -22,6 +22,8 @@ const yieldToBrowser = () => new Promise(r => { const c = new MessageChannel(); 
 const GHOST_OPACITY = 0.16;
 const GLASS = new THREE.Color().setRGB(0.85, 0.88, 0.92);   // linear, as BuildLapse
 // stages whose parts form the shell: see-through in the "See inside" view (as BuildLapse's X-ray)
+const LABEL_KEYS = ['category', 'stage', 'level'];
+const CAT_NAMES = new Set([...CATEGORIES.map(c => c[0]), OTHER]);
 const ENVELOPE = new Set(['fdn', 'col', 'beam', 'slab', 'steel', 'roof', 'wall', 'open', 'fin', 'rail', 'bound']);
 // Two faces lying in the same plane (a post flush with a wall, a column with a beam, tiles on a floor finish)
 // took turns winning pixels: the shimmer. Now the smaller part always wins: each part's depth is pushed back a
@@ -654,10 +656,21 @@ export class Viewer extends EventTarget {
       return a[0].localeCompare(b[0], undefined, { numeric: true });
     }));
 
+    // labels saved in the model (SketchUp attribute dictionary 'ModelViewer': category, stage, level) win over the
+    // guesses from names and tags. A key a part does not carry comes from the nearest group above that has it
+    // (a part inside a window type used on two floors: the level sits on each window, not on the shared part).
+    for (const E of this.ents) {           // parents come before children
+      const own = {};
+      for (const k of LABEL_KEYS) {
+        const val = E.attrs?.[`ModelViewer: ${k}`];
+        if (val != null && String(val) !== '') own[k] = String(val);
+      }
+      E.labels = { ...(E.parent?.labels || {}), ...own };
+    }
     this.categories = new Map();
     for (const E of this.ents) {
       if (!E.meshes.length) continue;
-      E.cat = categorize(E.name === rootEnt.name ? '' : E.name, E.tag);
+      E.cat = CAT_NAMES.has(E.labels.category) ? E.labels.category : categorize(E.name === rootEnt.name ? '' : E.name, E.tag);
       if (!this.categories.has(E.cat)) this.categories.set(E.cat, { name: E.cat, visible: true, count: 0 });
       this.categories.get(E.cat).count++;
     }

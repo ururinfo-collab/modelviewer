@@ -78,6 +78,46 @@ export function detectLevels(v) {
   return { names, elev, of, count, gf: 1, roof: roofIdx };
 }
 
+// Levels saved in the model (ModelViewer: level on the parts, written by the SketchUp label script): the names are
+// the model's own (Underground, Ground floor, First floor, Top floor, Roof), put in height order by where their parts
+// sit. A part without a label takes the level most labelled parts of its found level have. Heights come from the
+// found levels the same way. Fewer than half the parts labelled: the found levels stand.
+export function levelsFromLabels(v, auto) {
+  const parts = [...auto.of.keys()];
+  const lab = E => E.labels?.level || null;
+  if (parts.filter(lab).length < parts.length * 0.5) return auto;
+  const box = new THREE.Box3();
+  const ys = new Map(), votes = new Map();          // label -> part bottoms; label -> found level -> count
+  for (const E of parts) {
+    const n = lab(E);
+    if (!n) continue;
+    box.makeEmpty();
+    for (const m of E.meshes) box.expandByObject(m);
+    if (box.isEmpty()) continue;
+    if (!ys.has(n)) { ys.set(n, []); votes.set(n, new Map()); }
+    ys.get(n).push(box.min.y);
+    const a = auto.of.get(E), vm = votes.get(n);
+    vm.set(a, (vm.get(a) || 0) + 1);
+  }
+  const median = a => { const s = a.slice().sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+  const rank = n => (n === 'Underground' ? -Infinity : median(ys.get(n)));
+  const names = [...ys.keys()].sort((a, b) => rank(a) - rank(b));
+  const mode = m => [...m].sort((a, b) => b[1] - a[1])[0][0];
+  const elev = names.map(n => (n === 'Underground' ? null : auto.elev[mode(votes.get(n))] ?? null));
+  // a found level -> the label most of its labelled parts carry
+  const back = new Map();
+  for (const [n, vm] of votes) for (const [a, c] of vm) if (!back.has(a) || back.get(a)[1] < c) back.set(a, [n, c]);
+  const of = new Map();
+  for (const [E, a] of auto.of) {
+    const n = lab(E) ?? back.get(a)?.[0] ?? auto.names[a];
+    let k = names.indexOf(n);
+    if (k < 0) k = Math.max(0, names.indexOf('Ground floor'));
+    of.set(E, k);
+  }
+  const count = names.map((_, k) => [...of.values()].filter(l => l === k).length);
+  return { names, elev, of, count, gf: Math.max(0, names.indexOf('Ground floor')), roof: names.indexOf('Roof'), fromLabels: true };
+}
+
 // Levels from a build-order file that gives one per part (sequence.levels + a 7th field per part): Floors then
 // follows the same split as Build (drains under the slab Underground, stacks with the roof...). Parts are matched
 // as in Build (name, then the nearest centre); a part the file does not know keeps its own level by name.
@@ -94,8 +134,9 @@ export function levelsFromOrder(v, auto, data) {
   const of = new Map();
   for (const [E, alv] of auto.of) {
     const list = byName.get(E.name);
-    let lv = null;
-    if (list) {
+    // a level saved on the part itself is exact; matching by name and centre can mix up unnamed groups
+    let lv = names.includes(E.labels?.level) ? names.indexOf(E.labels.level) : null;
+    if (lv == null && list) {
       box.makeEmpty();
       for (const m of E.meshes) box.expandByObject(m);
       box.getCenter(c);
